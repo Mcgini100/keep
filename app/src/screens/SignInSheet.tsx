@@ -41,6 +41,7 @@ export function SignInSheet({
   const check = async () => {
     if (done.current || !service) return;
     const cookies = await Engine.sessionCookies(service);
+    if (done.current) return;
     if (cookies) {
       done.current = true;
       onClose(true);

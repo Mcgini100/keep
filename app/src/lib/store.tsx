@@ -223,9 +223,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const r = await Engine.prepare();
-        dispatch({ type: 'engine', engine: { status: 'ready', version: r.version } });
+        dispatch({ type: 'engine', engine: { version: r.version } });
         // YouTube and Instagram change often; keep yt-dlp fresh, at most once a day.
-        if (Date.now() - stateRef.current.settings.lastEngineUpdate > DAY) updateEngine();
+        if (Date.now() - stateRef.current.settings.lastEngineUpdate > DAY) await updateEngine();
+        else dispatch({ type: 'engine', engine: { status: 'ready' } });
       } catch (e) {
         dispatch({ type: 'engine', engine: { status: 'error', message: (e as Error).message } });
       }
@@ -316,7 +317,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!state.hydrated || state.paused || running.current || !engineAvailable) return;
-    if (state.engine.status === 'starting') return;
+    if (state.engine.status !== 'ready') return;
     const next = state.items.find((it) => it.status === 'pending');
     if (next) process(next);
   }, [state.hydrated, state.paused, state.items, state.engine.status, process]);

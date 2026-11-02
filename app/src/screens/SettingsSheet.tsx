@@ -14,13 +14,13 @@ const ACCOUNTS: { service: Service; label: string; detail: string; signedInDetai
     service: 'youtube',
     label: 'YouTube',
     detail: 'Needed when YouTube asks to confirm you’re not a bot. A spare Google account is best.',
-    signedInDetail: 'Signed in. Videos download as your account.',
+    signedInDetail: 'Session saved. YouTube may still reject a download.',
   },
   {
     service: 'instagram',
     label: 'Instagram',
     detail: 'Makes reels and posts download far more reliably.',
-    signedInDetail: 'Signed in. Reels and posts download as your account.',
+    signedInDetail: 'Session saved. Instagram may require verification.',
   },
 ];
 

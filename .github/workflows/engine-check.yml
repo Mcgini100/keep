@@ -1,7 +1,7 @@
 name: Engine check
 
-# Runs the same yt-dlp setup the app uses on the phone (Python 3.12, latest
-# yt-dlp, QuickJS 2025-04-26, identical options) against a link, verbosely.
+# Desktop smoke test of the two-stage extraction/download flow.
+# This does not validate Android packaging, WebView cookies or device networking.
 # Note: GitHub's servers are datacenter IPs, which YouTube sometimes treats
 # differently from a phone on mobile data or Wi-Fi.
 
@@ -37,19 +37,22 @@ jobs:
           python yt-dlp --version
 
       - name: Test
+        env:
+          TEST_URL: ${{ github.event.inputs.url }}
         run: |
-          set +e
-          URL="${{ github.event.inputs.url }}"
+          set -euo pipefail
+          URL="$TEST_URL"
           [ -n "$URL" ] || URL="$(head -n1 .github/engine-check-url)"
           cd eng
           COMMON=(--no-playlist --no-mtime --socket-timeout 30 --retries 5 --fragment-retries 5
                   --remote-components ejs:github --js-runtimes "quickjs:$PWD/libqjs.so"
                   -f "bv*+ba/b" -S "vcodec:h264,acodec:m4a")
           echo "=== info ==="
-          python yt-dlp -v "${COMMON[@]}" --dump-json "$URL" > info.json 2> info.err; echo "exit=$?"
+          python yt-dlp -v "${COMMON[@]}" --dump-json "$URL" > info.json 2> info.err || { cat info.err; exit 1; }
           cat info.err
           python -c "import json;d=json.load(open('info.json'));print('TITLE',d.get('title'));print('FORMAT',d.get('format'));print('PARTS',len(d.get('requested_formats') or []))" || true
           echo "=== download ==="
-          python yt-dlp -v "${COMMON[@]}" --restrict-filenames -o "out/%(title).80B [%(id)s].%(ext)s" \
-            --merge-output-format mp4 --remux-video mp4 "$URL" 2>&1 | grep -v "^\[download\] *[0-9.]*% of" | tail -60
-          ls -la out || true
+          python yt-dlp -v "${COMMON[@]}" --load-info-json info.json --print-to-file after_move:filepath output-path.txt --restrict-filenames -o "out/%(title).80B [%(id)s].%(ext)s" \
+            --merge-output-format mp4 --remux-video mp4 2>&1 | grep -v "^\[download\] *[0-9.]*% of" | tail -60
+          test -s output-path.txt
+          ls -la out
