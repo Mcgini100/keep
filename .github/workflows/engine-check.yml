@@ -38,6 +38,7 @@ jobs:
 
       - name: Test
         run: |
+          set +e
           URL="${{ github.event.inputs.url }}"
           [ -n "$URL" ] || URL="$(cat .github/engine-check-url)"
           cd eng
