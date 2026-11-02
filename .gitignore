@@ -1,0 +1,10 @@
+.DS_Store
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+server/downloads/
