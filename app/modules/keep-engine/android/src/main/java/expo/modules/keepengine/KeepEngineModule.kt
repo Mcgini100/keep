@@ -315,7 +315,8 @@ class KeepEngineModule : Module() {
       }
     return "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}); " +
       "ABIs ${android.os.Build.SUPPORTED_ABIS.joinToString()}; " +
-      "free storage ${context.filesDir.usableSpace / 1048576} MB\n$libs\n$causes".take(6000)
+      "free storage ${context.filesDir.usableSpace / 1048576} MB\n$libs\n$causes\n" +
+      android.util.Log.getStackTraceString(error).take(9000)
   }
 
   private fun cleanError(e: Throwable): String {

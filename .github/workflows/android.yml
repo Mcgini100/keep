@@ -52,6 +52,9 @@ jobs:
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install --clean
 
+      - name: Verify release optimizer is disabled
+        run: grep -qx 'android.enableMinifyInReleaseBuilds=false' android/gradle.properties
+
       - name: Build release APK
         working-directory: app/android
         run: |
