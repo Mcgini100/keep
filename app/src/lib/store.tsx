@@ -156,6 +156,7 @@ type Ctx = State & {
   setPaused: (paused: boolean) => void;
   updateSettings: (patch: Partial<Settings>) => void;
   updateEngine: () => Promise<void>;
+  retryEngine: () => Promise<void>;
   tap: (style?: 'light' | 'success' | 'error') => void;
 };
 
@@ -218,20 +219,22 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const retryEngine = useCallback(async () => {
+    if (!engineAvailable) return;
+    dispatch({ type: 'engine', engine: { status: 'starting', message: undefined } });
+    try {
+      const r = await Engine.prepare();
+      dispatch({ type: 'engine', engine: { version: r.version } });
+      if (Date.now() - stateRef.current.settings.lastEngineUpdate > DAY) await updateEngine();
+      else dispatch({ type: 'engine', engine: { status: 'ready' } });
+    } catch (e) {
+      dispatch({ type: 'engine', engine: { status: 'error', message: (e as Error).message } });
+    }
+  }, [updateEngine]);
+
   useEffect(() => {
-    if (!state.hydrated || !engineAvailable) return;
-    (async () => {
-      try {
-        const r = await Engine.prepare();
-        dispatch({ type: 'engine', engine: { version: r.version } });
-        // YouTube and Instagram change often; keep yt-dlp fresh, at most once a day.
-        if (Date.now() - stateRef.current.settings.lastEngineUpdate > DAY) await updateEngine();
-        else dispatch({ type: 'engine', engine: { status: 'ready' } });
-      } catch (e) {
-        dispatch({ type: 'engine', engine: { status: 'error', message: (e as Error).message } });
-      }
-    })();
-  }, [state.hydrated, updateEngine]);
+    if (state.hydrated && engineAvailable) retryEngine();
+  }, [state.hydrated, retryEngine]);
 
   useEffect(() => {
     const sub = Engine.onProgress((e) => {
@@ -382,9 +385,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       setPaused,
       updateSettings: (patch) => dispatch({ type: 'settings', patch }),
       updateEngine,
+      retryEngine,
       tap,
     };
-  }, [state, enqueue, cancel, remove, setPaused, updateEngine, tap]);
+  }, [state, enqueue, cancel, remove, setPaused, updateEngine, retryEngine, tap]);
 
   return <QueueContext.Provider value={value}>{children}</QueueContext.Provider>;
 }

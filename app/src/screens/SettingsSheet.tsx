@@ -1,3 +1,4 @@
+import * as Clipboard from 'expo-clipboard';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -140,8 +141,15 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
                 <ActivityIndicator color={c.secondary} />
               ) : e.status === 'ready' ? (
                 <TextButton label="Update" onPress={q.updateEngine} />
+              ) : e.status === 'error' ? (
+                <TextButton label="Retry" onPress={q.retryEngine} />
               ) : null}
             </Row>
+            {e.status === 'error' && e.message ? (
+              <Row label="Startup error details" detail="Copy these details to get help.">
+                <TextButton label="Copy" onPress={() => Clipboard.setStringAsync(e.message ?? '')} />
+              </Row>
+            ) : null}
           </Card>
           <Text style={[type.caption, styles.foot, { color: c.secondary }]}>
             Everything happens on this phone. Keep updates its engine once a day so YouTube and Instagram keep working.

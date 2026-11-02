@@ -43,7 +43,7 @@ class KeepEngineModule : Module() {
           ensureReady()
           promise.resolve(mapOf("version" to YoutubeDL.version(context)))
         } catch (e: Throwable) {
-          promise.reject("ERR_PREPARE", e.message ?: "Couldn't start the download engine", e)
+          promise.reject("ERR_PREPARE", startupError(e), e)
         }
       }
     }
@@ -128,8 +128,16 @@ class KeepEngineModule : Module() {
   @Synchronized
   private fun ensureReady() {
     if (ready) return
-    YoutubeDL.init(context)
-    FFmpeg.init(context)
+    try {
+      YoutubeDL.init(context)
+    } catch (e: Throwable) {
+      throw IllegalStateException("Python and yt-dlp initialization failed", e)
+    }
+    try {
+      FFmpeg.init(context)
+    } catch (e: Throwable) {
+      throw IllegalStateException("FFmpeg initialization failed", e)
+    }
     ready = true
   }
 
@@ -292,6 +300,22 @@ class KeepEngineModule : Module() {
       else -> 1.0
     }
     return v * mult
+  }
+
+  private fun startupError(error: Throwable): String {
+    // Startup has no media URL or session cookies. Preserve causes because the
+    // wrapper often reports only "failed to initialize" at the outer layer.
+    val causes = generateSequence(error) { it.cause }.take(8).joinToString("\nCaused by: ") {
+      "${it.javaClass.name}: ${it.message ?: "No message"}"
+    }
+    val libs = listOf("libpython.zip.so", "libffmpeg.zip.so", "libpython.so", "libffmpeg.so", "libqjs.so")
+      .joinToString(", ") { name ->
+        val file = File(context.applicationInfo.nativeLibraryDir, name)
+        "$name=${if (file.isFile) file.length().toString() else "missing"}"
+      }
+    return "Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}); " +
+      "ABIs ${android.os.Build.SUPPORTED_ABIS.joinToString()}; " +
+      "free storage ${context.filesDir.usableSpace / 1048576} MB\n$libs\n$causes".take(6000)
   }
 
   private fun cleanError(e: Throwable): String {
