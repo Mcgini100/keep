@@ -11,13 +11,14 @@ function statusLine(item: Item): string {
   switch (item.status) {
     case 'pending':
       return `Waiting · ${item.kind === 'audio' ? 'Audio' : item.quality === 'best' ? 'Best quality' : `${item.quality}p`}`;
-    case 'fetching': {
+    case 'downloading': {
+      if (item.preparing) return 'Getting ready…';
       const pct = Math.round(item.progress * 100);
       const speed = formatSpeed(item.speed);
-      return `Fetching · ${pct}%${speed ? ` · ${speed}` : ''}`;
+      return `Downloading · ${pct}%${speed ? ` · ${speed}` : ''}`;
     }
-    case 'saving':
-      return `Saving to phone · ${Math.round(item.progress * 100)}%`;
+    case 'processing':
+      return item.kind === 'audio' ? 'Converting to audio…' : 'Finishing up…';
     case 'done':
       return [
         item.kind === 'audio' ? 'Audio' : 'Video',
@@ -44,7 +45,7 @@ export function ItemRow({
   large?: boolean;
 }) {
   const c = usePalette();
-  const active = item.status === 'fetching' || item.status === 'saving';
+  const active = item.status === 'downloading' || item.status === 'processing';
   const failed = item.status === 'failed';
   return (
     <View style={styles.wrap}>

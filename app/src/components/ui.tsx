@@ -78,18 +78,22 @@ export function TextButton({
   onPress,
   tone = 'accent',
   style,
+  disabled,
 }: {
   label: string;
   onPress: () => void;
   tone?: 'accent' | 'danger' | 'secondary';
   style?: StyleProp<TextStyle>;
+  disabled?: boolean;
 }) {
   const c = usePalette();
   const color = tone === 'danger' ? c.danger : tone === 'secondary' ? c.secondary : c.accent;
   return (
-    <Pressable onPress={onPress} hitSlop={10} accessibilityRole="button">
+    <Pressable onPress={onPress} hitSlop={10} accessibilityRole="button" disabled={disabled}>
       {({ pressed }) => (
-        <Text style={[type.callout, { color, fontWeight: '500', opacity: pressed ? 0.5 : 1 }, style]}>
+        <Text
+          style={[type.callout, { color, fontWeight: '500', opacity: disabled ? 0.35 : pressed ? 0.5 : 1 }, style]}
+        >
           {label}
         </Text>
       )}

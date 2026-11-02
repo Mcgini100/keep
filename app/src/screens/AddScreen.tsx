@@ -34,7 +34,14 @@ export function AddScreen({
 
   const links = useMemo(() => extractLinks(text), [text]);
   const valid = links.filter((l) => l.platform);
-  const noServer = !q.settings.serverUrl.trim();
+  const engineNote =
+    q.engine.status === 'unavailable'
+      ? 'Downloads run in the Android app. Install the Keep APK.'
+      : q.engine.status === 'error'
+        ? `The download engine couldn't start. ${q.engine.message ?? ''}`.trim()
+        : q.engine.status === 'starting'
+          ? 'Setting up the download engine — first launch takes a moment.'
+          : null;
 
   const paste = async () => {
     const clip = await Clipboard.getStringAsync();
@@ -144,14 +151,8 @@ export function AddScreen({
         <PrimaryButton label={ctaLabel} onPress={add} disabled={valid.length === 0} />
         {notice ? (
           <Text style={[type.caption, styles.note, { color: c.secondary }]}>{notice}</Text>
-        ) : noServer ? (
-          <Text style={[type.caption, styles.note, { color: c.secondary }]}>
-            Set your download engine address in{' '}
-            <Text style={{ color: c.accent }} onPress={onOpenSettings}>
-              Settings
-            </Text>{' '}
-            first.
-          </Text>
+        ) : engineNote ? (
+          <Text style={[type.caption, styles.note, { color: c.secondary }]}>{engineNote}</Text>
         ) : null}
       </View>
     </ScrollView>

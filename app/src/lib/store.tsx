@@ -1,33 +1,30 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Directory, File, Paths } from 'expo-file-system';
+import { File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Album, Asset, requestPermissionsAsync } from 'expo-media-library';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from 'react';
 import { Platform as RNPlatform } from 'react-native';
 
-import { api, ApiError, authHeaders } from './api';
+import { Engine, engineAvailable } from '../../modules/keep-engine';
+import { friendlyError } from './errors';
 import type { ParsedLink } from './links';
-import { ACTIVE, Item, Kind, Quality, Settings } from './types';
+import { ACTIVE, EngineState, Item, Kind, Quality, Settings } from './types';
 
 // --------------------------------------------------------------------------- //
 // State
 // --------------------------------------------------------------------------- //
 
-const STORAGE_KEY = 'keep/state/v1';
+const STORAGE_KEY = 'keep/state/v2';
 const ALBUM = 'Keep';
-
-/** How the single progress bar is split between the two phases. */
-const FETCH_SHARE = 0.8;
+const DAY = 24 * 60 * 60 * 1000;
 
 export const defaultSettings: Settings = {
-  serverUrl: '',
-  apiKey: '',
   kind: 'video',
   quality: 'best',
   saveToPhotos: true,
   haptics: true,
-  // iOS shows a paste banner every time the clipboard is read, so it's opt-in there.
   watchClipboard: RNPlatform.OS === 'android',
+  lastEngineUpdate: 0,
 };
 
 type State = {
@@ -35,21 +32,32 @@ type State = {
   paused: boolean;
   items: Item[];
   settings: Settings;
+  engine: EngineState;
 };
 
 type Action =
   | { type: 'hydrate'; state: Partial<State> }
   | { type: 'add'; items: Item[] }
   | { type: 'patch'; id: string; patch: Partial<Item> }
+  | { type: 'progress'; id: string; patch: Partial<Item> }
   | { type: 'remove'; id: string }
   | { type: 'retry'; id: string }
   | { type: 'retryFailed' }
   | { type: 'clearFinished' }
   | { type: 'moveToTop'; id: string }
   | { type: 'pause'; paused: boolean }
-  | { type: 'settings'; patch: Partial<Settings> };
+  | { type: 'settings'; patch: Partial<Settings> }
+  | { type: 'engine'; engine: Partial<EngineState> };
 
-const initial: State = { hydrated: false, paused: false, items: [], settings: defaultSettings };
+const initial: State = {
+  hydrated: false,
+  paused: false,
+  items: [],
+  settings: defaultSettings,
+  engine: { status: engineAvailable ? 'starting' : 'unavailable', version: null },
+};
+
+const reset = (it: Item): Item => ({ ...it, status: 'pending', progress: 0, error: null, speed: null, preparing: false });
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -58,33 +66,26 @@ function reducer(state: State, action: Action): State {
     case 'add':
       return { ...state, items: [...state.items, ...action.items] };
     case 'patch':
+      return { ...state, items: state.items.map((it) => (it.id === action.id ? { ...it, ...action.patch } : it)) };
+    case 'progress':
+      // Late events from a cancelled job must not bring it back to life.
       return {
         ...state,
-        items: state.items.map((it) => (it.id === action.id ? { ...it, ...action.patch } : it)),
+        items: state.items.map((it) =>
+          it.id === action.id && ACTIVE.includes(it.status) ? { ...it, ...action.patch } : it,
+        ),
       };
     case 'remove':
       return { ...state, items: state.items.filter((it) => it.id !== action.id) };
     case 'retry':
-      return {
-        ...state,
-        items: state.items.map((it) =>
-          it.id === action.id ? { ...it, status: 'pending', progress: 0, error: null } : it,
-        ),
-      };
+      return { ...state, items: state.items.map((it) => (it.id === action.id ? reset(it) : it)) };
     case 'retryFailed':
       return {
         ...state,
-        items: state.items.map((it) =>
-          it.status === 'failed' || it.status === 'cancelled'
-            ? { ...it, status: 'pending', progress: 0, error: null }
-            : it,
-        ),
+        items: state.items.map((it) => (it.status === 'failed' || it.status === 'cancelled' ? reset(it) : it)),
       };
     case 'clearFinished':
-      return {
-        ...state,
-        items: state.items.filter((it) => it.status !== 'failed' && it.status !== 'cancelled'),
-      };
+      return { ...state, items: state.items.filter((it) => it.status !== 'failed' && it.status !== 'cancelled') };
     case 'moveToTop': {
       const target = state.items.find((it) => it.id === action.id);
       if (!target) return state;
@@ -94,6 +95,8 @@ function reducer(state: State, action: Action): State {
       return { ...state, paused: action.paused };
     case 'settings':
       return { ...state, settings: { ...state.settings, ...action.patch } };
+    case 'engine':
+      return { ...state, engine: { ...state.engine, ...action.engine } };
   }
 }
 
@@ -102,34 +105,6 @@ function reducer(state: State, action: Action): State {
 // --------------------------------------------------------------------------- //
 
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-
-class Aborted extends Error {
-  constructor() {
-    super('aborted');
-    this.name = 'AbortError';
-  }
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) return reject(new Aborted());
-    const t = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(t);
-      reject(new Aborted());
-    };
-    signal.addEventListener('abort', onAbort, { once: true });
-  });
-}
-
-function libraryDir(): Directory {
-  const dir = new Directory(Paths.document, 'Keep');
-  if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
-  return dir;
-}
 
 async function saveToPhotos(uri: string): Promise<boolean> {
   const perm = await requestPermissionsAsync(true);
@@ -150,7 +125,7 @@ export function deleteLocalFile(uri?: string | null) {
     const f = new File(uri);
     if (f.exists) f.delete();
   } catch {
-    // Already gone — nothing to do.
+    // Already gone.
   }
 }
 
@@ -172,6 +147,7 @@ type Ctx = State & {
   moveToTop: (id: string) => void;
   setPaused: (paused: boolean) => void;
   updateSettings: (patch: Partial<Settings>) => void;
+  updateEngine: () => Promise<void>;
   tap: (style?: 'light' | 'success' | 'error') => void;
 };
 
@@ -181,8 +157,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initial);
   const stateRef = useRef(state);
   stateRef.current = state;
-
-  const worker = useRef<{ id: string; controller: AbortController; jobId?: string } | null>(null);
+  const running = useRef<string | null>(null);
 
   // ---- persistence -------------------------------------------------------- //
   useEffect(() => {
@@ -192,16 +167,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
         if (!raw) return dispatch({ type: 'hydrate', state: {} });
         const saved = JSON.parse(raw) as Partial<State>;
         // Anything mid-flight when the app closed starts again from the top.
-        const items = (saved.items ?? []).map((it) =>
-          ACTIVE.includes(it.status) ? { ...it, status: 'pending' as const, progress: 0 } : it,
-        );
+        const items = (saved.items ?? []).map((it) => (ACTIVE.includes(it.status) ? reset(it) : it));
         dispatch({
           type: 'hydrate',
-          state: {
-            items,
-            paused: saved.paused ?? false,
-            settings: { ...defaultSettings, ...(saved.settings ?? {}) },
-          },
+          state: { items, paused: saved.paused ?? false, settings: { ...defaultSettings, ...(saved.settings ?? {}) } },
         });
       } catch {
         dispatch({ type: 'hydrate', state: {} });
@@ -228,104 +197,116 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       ).catch(() => {});
   }, []);
 
+  // ---- engine lifecycle --------------------------------------------------- //
+  const updateEngine = useCallback(async () => {
+    if (!engineAvailable) return;
+    dispatch({ type: 'engine', engine: { status: 'updating', message: undefined } });
+    try {
+      const r = await Engine.update();
+      dispatch({ type: 'engine', engine: { status: 'ready', version: r.version, message: r.updated ? 'Updated' : 'Up to date' } });
+      dispatch({ type: 'settings', patch: { lastEngineUpdate: Date.now() } });
+    } catch (e) {
+      dispatch({ type: 'engine', engine: { status: 'ready', message: "Couldn't update. Check your connection." } });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!state.hydrated || !engineAvailable) return;
+    (async () => {
+      try {
+        const r = await Engine.prepare();
+        dispatch({ type: 'engine', engine: { status: 'ready', version: r.version } });
+        // YouTube and Instagram change often; keep yt-dlp fresh, at most once a day.
+        if (Date.now() - stateRef.current.settings.lastEngineUpdate > DAY) updateEngine();
+      } catch (e) {
+        dispatch({ type: 'engine', engine: { status: 'error', message: (e as Error).message } });
+      }
+    })();
+  }, [state.hydrated, updateEngine]);
+
+  useEffect(() => {
+    const sub = Engine.onProgress((e) => {
+      const patch: Partial<Item> = {
+        status: e.phase === 'processing' ? 'processing' : 'downloading',
+        preparing: e.phase === 'preparing',
+        progress: e.progress,
+      };
+      if (e.speed !== undefined) patch.speed = e.speed;
+      if (e.title) patch.title = e.title;
+      if (e.thumbnail) patch.thumbnail = e.thumbnail;
+      if (e.uploader) patch.uploader = e.uploader;
+      if (e.duration) patch.duration = e.duration;
+      dispatch({ type: 'progress', id: e.id, patch });
+    });
+    return () => sub?.remove();
+  }, []);
+
   // ---- the sequential worker --------------------------------------------- //
   const process = useCallback(
     async (item: Item) => {
-      const controller = new AbortController();
-      const { signal } = controller;
-      worker.current = { id: item.id, controller };
-      const settings = stateRef.current.settings;
+      running.current = item.id;
       const patch = (p: Partial<Item>) => dispatch({ type: 'patch', id: item.id, patch: p });
-
-      patch({ status: 'fetching', progress: 0, error: null });
+      patch({ status: 'downloading', progress: 0, error: null, preparing: true });
 
       try {
-        // 1. Ask the engine to fetch the media.
-        const created = await api.createJob(settings, item.url, item.kind, item.quality, signal);
-        worker.current.jobId = created.id;
+        const cookies = item.platform === 'instagram' ? await Engine.instagramCookies() : null;
+        const res = await Engine.download(item.id, item.url, item.kind, item.quality, cookies);
 
-        let job = created;
-        let misses = 0;
-        while (job.status !== 'ready') {
-          await sleep(900, signal);
-          try {
-            job = await api.job(settings, created.id, signal);
-            misses = 0;
-          } catch (e) {
-            if (signal.aborted) throw e;
-            if (++misses >= 5) throw e; // tolerate a few blips on a flaky network
-            continue;
-          }
-          if (job.status === 'error') throw new ApiError(job.error || 'Download failed.', 500);
-          if (job.status === 'cancelled') throw new Aborted();
-          patch({
-            progress: job.progress * FETCH_SHARE,
-            speed: job.speed,
-            title: job.title ?? undefined,
-            thumbnail: job.thumbnail ?? undefined,
-            uploader: job.uploader ?? undefined,
-            duration: job.duration ?? undefined,
-          });
+        // Still wanted? (It may have been cancelled in the last instant.)
+        const now = stateRef.current.items.find((i) => i.id === item.id);
+        if (!now || !ACTIVE.includes(now.status)) {
+          deleteLocalFile(res.uri);
+          return;
         }
 
-        // 2. Bring the file onto the phone.
-        patch({ status: 'saving', progress: FETCH_SHARE, speed: null });
-        const file = await File.downloadFileAsync(api.fileUrl(settings, created.id), libraryDir(), {
-          headers: authHeaders(settings),
-          idempotent: true,
-          signal,
-          onProgress: ({ bytesWritten, totalBytes }) => {
-            const frac = totalBytes > 0 ? bytesWritten / totalBytes : 0;
-            patch({ progress: FETCH_SHARE + frac * (1 - FETCH_SHARE) });
-          },
-        });
-
-        // 3. File it in Photos (videos only — Photos doesn't take audio).
         let savedToPhotos = false;
-        if (item.kind === 'video' && settings.saveToPhotos) {
+        if (item.kind === 'video' && stateRef.current.settings.saveToPhotos) {
           try {
-            savedToPhotos = await saveToPhotos(file.uri);
+            savedToPhotos = await saveToPhotos(res.uri);
           } catch {
             savedToPhotos = false;
           }
         }
 
-        api.deleteJob(settings, created.id);
         patch({
           status: 'done',
           progress: 1,
-          localUri: file.uri,
-          size: file.size ?? job.filesize,
-          title: job.title ?? item.title,
-          thumbnail: job.thumbnail ?? item.thumbnail,
-          uploader: job.uploader ?? item.uploader,
-          duration: job.duration ?? item.duration,
+          speed: null,
+          preparing: false,
+          localUri: res.uri,
+          size: res.size,
+          title: res.title ?? now.title,
+          thumbnail: res.thumbnail ?? now.thumbnail,
+          uploader: res.uploader ?? now.uploader,
+          duration: res.duration ?? now.duration,
           savedToPhotos,
           finishedAt: Date.now(),
         });
         tap('success');
       } catch (e) {
-        const jobId = worker.current?.jobId;
-        if (jobId) api.deleteJob(settings, jobId);
-        if (signal.aborted) {
-          // Cancel and pause both abort; the caller has already set the right status.
-          return;
-        }
-        patch({ status: 'failed', error: (e as Error).message || 'Download failed.', speed: null });
+        const err = e as Error & { code?: string };
+        if (err.code === 'ERR_CANCELLED') return; // cancel / pause already set the status
+        dispatch({
+          type: 'progress',
+          id: item.id,
+          patch: { status: 'failed', error: friendlyError(err.message, item.platform), speed: null, preparing: false },
+        });
         tap('error');
       } finally {
-        if (worker.current?.id === item.id) worker.current = null;
+        if (running.current === item.id) running.current = null;
+        // Nudge the effect below to look for the next item.
+        dispatch({ type: 'patch', id: '__tick__', patch: {} });
       }
     },
     [tap],
   );
 
-  // Pick up the next pending item whenever nothing is running.
   useEffect(() => {
-    if (!state.hydrated || state.paused || worker.current) return;
+    if (!state.hydrated || state.paused || running.current || !engineAvailable) return;
+    if (state.engine.status === 'starting') return;
     const next = state.items.find((it) => it.status === 'pending');
     if (next) process(next);
-  }, [state.hydrated, state.paused, state.items, process]);
+  }, [state.hydrated, state.paused, state.items, state.engine.status, process]);
 
   // ---- actions ------------------------------------------------------------ //
   const enqueue = useCallback((links: ParsedLink[], kind: Kind, quality: Quality) => {
@@ -348,27 +329,23 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     return items.length;
   }, []);
 
-  const abortIfRunning = (id: string) => {
-    if (worker.current?.id === id) worker.current.controller.abort();
-  };
-
   const cancel = useCallback((id: string) => {
-    abortIfRunning(id);
-    dispatch({ type: 'patch', id, patch: { status: 'cancelled', speed: null } });
+    dispatch({ type: 'patch', id, patch: { status: 'cancelled', speed: null, preparing: false } });
+    Engine.cancel(id);
   }, []);
 
   const remove = useCallback((id: string) => {
-    abortIfRunning(id);
     const it = stateRef.current.items.find((i) => i.id === id);
+    if (it && ACTIVE.includes(it.status)) Engine.cancel(id);
     if (it?.status === 'done') deleteLocalFile(it.localUri);
     dispatch({ type: 'remove', id });
   }, []);
 
   const setPaused = useCallback((paused: boolean) => {
-    if (paused && worker.current) {
-      const id = worker.current.id;
-      worker.current.controller.abort();
-      dispatch({ type: 'patch', id, patch: { status: 'pending', progress: 0, speed: null } });
+    const id = running.current;
+    if (paused && id) {
+      dispatch({ type: 'patch', id, patch: { status: 'pending', progress: 0, speed: null, preparing: false } });
+      Engine.cancel(id);
     }
     dispatch({ type: 'pause', paused });
   }, []);
@@ -380,9 +357,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       current: items.find((i) => ACTIVE.includes(i.status)),
       pending: items.filter((i) => i.status === 'pending'),
       finished: items.filter((i) => i.status === 'failed' || i.status === 'cancelled'),
-      library: items
-        .filter((i) => i.status === 'done')
-        .sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0)),
+      library: items.filter((i) => i.status === 'done').sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0)),
       enqueue,
       cancel,
       remove,
@@ -392,9 +367,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       moveToTop: (id) => dispatch({ type: 'moveToTop', id }),
       setPaused,
       updateSettings: (patch) => dispatch({ type: 'settings', patch }),
+      updateEngine,
       tap,
     };
-  }, [state, enqueue, cancel, remove, setPaused, tap]);
+  }, [state, enqueue, cancel, remove, setPaused, updateEngine, tap]);
 
   return <QueueContext.Provider value={value}>{children}</QueueContext.Provider>;
 }

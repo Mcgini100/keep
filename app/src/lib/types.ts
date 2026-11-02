@@ -5,8 +5,8 @@ export type Quality = 'best' | '1080' | '720' | '480' | '360';
 
 export type ItemStatus =
   | 'pending' // waiting its turn
-  | 'fetching' // engine is downloading from the platform
-  | 'saving' // phone is receiving the file
+  | 'downloading' // fetching streams from the platform
+  | 'processing' // merging / converting on the phone
   | 'done'
   | 'failed'
   | 'cancelled';
@@ -18,8 +18,9 @@ export type Item = {
   kind: Kind;
   quality: Quality;
   status: ItemStatus;
-  progress: number; // 0..1 across both phases
+  progress: number; // 0..1
   speed?: number | null;
+  preparing?: boolean;
   title?: string | null;
   thumbnail?: string | null;
   uploader?: string | null;
@@ -33,13 +34,18 @@ export type Item = {
 };
 
 export type Settings = {
-  serverUrl: string;
-  apiKey: string;
   kind: Kind;
   quality: Quality;
   saveToPhotos: boolean;
   haptics: boolean;
   watchClipboard: boolean;
+  lastEngineUpdate: number;
 };
 
-export const ACTIVE: ItemStatus[] = ['fetching', 'saving'];
+export type EngineState = {
+  status: 'starting' | 'ready' | 'updating' | 'unavailable' | 'error';
+  version: string | null;
+  message?: string;
+};
+
+export const ACTIVE: ItemStatus[] = ['downloading', 'processing'];

@@ -1,59 +1,37 @@
-import React, { useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Engine, engineAvailable } from '../../modules/keep-engine';
 import { Card, Hairline, Row, Segmented, SectionLabel, TextButton, ToggleRow } from '../components/ui';
-import { api } from '../lib/api';
 import { useQueue } from '../lib/store';
 import type { Kind, Quality } from '../lib/types';
 import { space, type, usePalette } from '../theme';
-
-type Check = { state: 'idle' | 'checking' | 'ok' | 'fail'; message?: string };
+import { InstagramSignIn } from './InstagramSignIn';
 
 export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const c = usePalette();
   const q = useQueue();
   const s = q.settings;
-  const [check, setCheck] = useState<Check>({ state: 'idle' });
+  const [igSignedIn, setIgSignedIn] = useState(false);
+  const [igSheet, setIgSheet] = useState(false);
 
-  const test = async () => {
-    setCheck({ state: 'checking' });
-    try {
-      const h = await api.health(s);
-      const warn = !h.ffmpeg ? ' · ffmpeg missing' : h.auth && !s.apiKey ? ' · needs access key' : '';
-      setCheck({ state: warn ? 'fail' : 'ok', message: `Connected · yt-dlp ${h.yt_dlp}${warn}` });
-      q.tap(warn ? 'error' : 'success');
-    } catch (e) {
-      setCheck({ state: 'fail', message: (e as Error).message });
-      q.tap('error');
-    }
-  };
+  useEffect(() => {
+    if (visible) Engine.instagramCookies().then((v) => setIgSignedIn(!!v)).catch(() => {});
+  }, [visible]);
 
-  const field = (
-    label: string,
-    value: string,
-    onChange: (v: string) => void,
-    placeholder: string,
-    secure = false,
-  ) => (
-    <View style={styles.field}>
-      <Text style={[type.caption, { color: c.secondary, marginBottom: 4 }]}>{label}</Text>
-      <TextInput
-        value={value}
-        onChangeText={(v) => {
-          onChange(v);
-          setCheck({ state: 'idle' });
-        }}
-        placeholder={placeholder}
-        placeholderTextColor={c.tertiary}
-        autoCapitalize="none"
-        autoCorrect={false}
-        secureTextEntry={secure}
-        keyboardType={secure ? 'default' : 'url'}
-        style={[type.body, { color: c.text, paddingVertical: 4 }]}
-      />
-    </View>
-  );
+  const e = q.engine;
+  const busy = e.status === 'starting' || e.status === 'updating';
+  const engineDetail =
+    e.status === 'unavailable'
+      ? 'Runs on Android only.'
+      : e.status === 'starting'
+        ? 'Starting…'
+        : e.status === 'updating'
+          ? 'Checking for updates…'
+          : e.status === 'error'
+            ? e.message || "Couldn't start."
+            : [e.version ? `yt-dlp ${e.version}` : null, e.message].filter(Boolean).join(' · ');
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
@@ -65,33 +43,7 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-          <SectionLabel>Download engine</SectionLabel>
-          <Card>
-            {field('Address', s.serverUrl, (v) => q.updateSettings({ serverUrl: v }), 'https://keep.example.com')}
-            <Hairline inset={space.l} />
-            {field('Access key (optional)', s.apiKey, (v) => q.updateSettings({ apiKey: v }), 'Matches KEEP_API_KEY', true)}
-            <Hairline inset={space.l} />
-            <Row
-              label="Test connection"
-              detail={check.message ?? (check.state === 'checking' ? 'Checking…' : undefined)}
-              onPress={test}
-            >
-              <Text
-                style={[
-                  type.caption,
-                  { color: check.state === 'ok' ? c.success : check.state === 'fail' ? c.danger : c.accent },
-                ]}
-              >
-                {check.state === 'ok' ? 'Connected' : check.state === 'fail' ? 'Problem' : 'Test'}
-              </Text>
-            </Row>
-          </Card>
-          <Text style={[type.caption, styles.foot, { color: c.secondary }]}>
-            Keep sends links to your own engine, which does the heavy lifting and hands back a clean file. See the
-            README to run it with one Docker command.
-          </Text>
-
+        <ScrollView contentContainerStyle={styles.container}>
           <SectionLabel>Defaults</SectionLabel>
           <Text style={[type.caption, { color: c.secondary, marginBottom: space.s }]}>Format</Text>
           <Segmented<Kind>
@@ -115,10 +67,36 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
             onChange={(v) => q.updateSettings({ quality: v })}
           />
 
+          <SectionLabel>Instagram</SectionLabel>
+          <Card>
+            <Row
+              label={igSignedIn ? 'Signed in' : 'Sign in'}
+              detail={
+                igSignedIn
+                  ? 'Reels and posts download as your account.'
+                  : 'Optional. Makes Instagram downloads far more reliable.'
+              }
+            >
+              {igSignedIn ? (
+                <TextButton
+                  label="Sign out"
+                  tone="danger"
+                  onPress={async () => {
+                    await Engine.signOutInstagram();
+                    setIgSignedIn(false);
+                    q.tap();
+                  }}
+                />
+              ) : (
+                <TextButton label="Sign in" onPress={() => setIgSheet(true)} disabled={!engineAvailable} />
+              )}
+            </Row>
+          </Card>
+
           <SectionLabel>Behaviour</SectionLabel>
           <Card>
             <ToggleRow
-              label="Save videos to Photos"
+              label="Save videos to Gallery"
               detail="Into an album called “Keep”."
               value={s.saveToPhotos}
               onChange={(v) => q.updateSettings({ saveToPhotos: v })}
@@ -134,11 +112,36 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
             <ToggleRow label="Haptics" value={s.haptics} onChange={(v) => q.updateSettings({ haptics: v })} />
           </Card>
 
+          <SectionLabel>Engine</SectionLabel>
+          <Card>
+            <Row label="Download engine" detail={engineDetail}>
+              {busy ? (
+                <ActivityIndicator color={c.secondary} />
+              ) : e.status === 'ready' ? (
+                <TextButton label="Update" onPress={q.updateEngine} />
+              ) : null}
+            </Row>
+          </Card>
+          <Text style={[type.caption, styles.foot, { color: c.secondary }]}>
+            Everything happens on this phone. Keep updates its engine once a day so YouTube and Instagram keep working.
+          </Text>
+
           <Text style={[type.caption, styles.foot, { color: c.tertiary, textAlign: 'center', marginTop: space.xxl }]}>
             Only download content you own or have permission to save.
           </Text>
         </ScrollView>
       </SafeAreaView>
+
+      <InstagramSignIn
+        visible={igSheet}
+        onClose={(ok) => {
+          setIgSheet(false);
+          if (ok) {
+            setIgSignedIn(true);
+            q.tap('success');
+          }
+        }}
+      />
     </Modal>
   );
 }
@@ -147,6 +150,5 @@ const styles = StyleSheet.create({
   bar: { height: 56, alignItems: 'center', justifyContent: 'center' },
   done: { position: 'absolute', right: space.xl, top: 0, bottom: 0, justifyContent: 'center' },
   container: { paddingHorizontal: space.xl, paddingBottom: space.xxxl },
-  field: { paddingHorizontal: space.l, paddingVertical: space.m },
   foot: { marginTop: space.s, lineHeight: 18 },
 });
