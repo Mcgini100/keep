@@ -40,7 +40,7 @@ jobs:
         run: |
           set +e
           URL="${{ github.event.inputs.url }}"
-          [ -n "$URL" ] || URL="$(cat .github/engine-check-url)"
+          [ -n "$URL" ] || URL="$(head -n1 .github/engine-check-url)"
           cd eng
           COMMON=(--no-playlist --no-mtime --socket-timeout 30 --retries 5 --fragment-retries 5
                   --remote-components ejs:github --js-runtimes "quickjs:$PWD/libqjs.so"
