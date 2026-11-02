@@ -4,11 +4,13 @@ export function friendlyError(raw: string | undefined, platform?: string): strin
   const l = msg.toLowerCase();
   if (!msg) return 'Download failed.';
   if (l.includes('sign in to confirm') || l.includes('not a bot'))
-    return 'YouTube wants to check this phone. Wait a little, then retry.';
+    return 'YouTube wants you signed in. Go to Settings → YouTube → Sign in, then retry.';
+  if (l.includes('age') && (l.includes('confirm your age') || l.includes('age-restricted') || l.includes('inappropriate')))
+    return 'This video is age-restricted. Sign in to YouTube in Settings, then retry.';
   if (l.includes('login required') || l.includes('log in') || l.includes('private') || l.includes('cookies'))
     return platform === 'instagram'
-      ? 'Instagram needs you signed in. Go to Settings → Instagram.'
-      : 'This video is private or needs a sign-in.';
+      ? 'Instagram needs you signed in. Go to Settings → Instagram → Sign in.'
+      : 'This video is private or needs a sign-in. Try Settings → YouTube → Sign in.';
   if (l.includes('rate') && l.includes('limit'))
     return platform === 'instagram'
       ? 'Instagram is limiting requests. Sign in under Settings, or retry later.'

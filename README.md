@@ -38,7 +38,8 @@ Keep follows Jony Ive's industrial design principles: as little design as possib
 - **Gallery.** Videos are saved to a **Keep** album in your Gallery. You can turn this off.
 - **Library.** Everything you've kept, filtered by video or audio. Tap to share, long press to delete.
 - **Clipboard.** Open Keep with a link copied and it offers to add it.
-- **Instagram sign-in (optional).** Sign in on Instagram's own page inside the app so reels and posts download reliably. Keep stores only the session, never your password.
+- **YouTube and Instagram sign-in (optional).** YouTube now often asks to *confirm you're not a bot*, and Instagram blocks most signed-out downloads. Sign in once under **Settings → Accounts**, on the real Google or Instagram page inside the app, and downloads use your session. Keep stores only the session, never your password. A spare Google account is safest.
+- **Error details.** Tap a failed download to see exactly what went wrong, and copy it to share.
 - **Self-updating engine.** yt-dlp updates itself once a day, or whenever you tap **Update** in Settings, so downloads keep working when YouTube or Instagram change.
 - **Survives restarts.** The queue, library and settings are saved. Interrupted downloads start again automatically.
 

@@ -1,10 +1,21 @@
+import * as Clipboard from 'expo-clipboard';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ItemRow } from '../components/ItemRow';
 import { Card, Empty, Hairline, SectionLabel, TextButton } from '../components/ui';
 import { useQueue } from '../lib/store';
+import type { Item } from '../lib/types';
 import { space, type, usePalette } from '../theme';
+
+function showDetails(item: Item, version: string | null) {
+  const detail = item.errorDetail || item.error || 'No details.';
+  const report = [`Keep · yt-dlp ${version ?? 'unknown'}`, item.url, '', detail].join('\n');
+  Alert.alert(item.error || 'Download failed', detail.length > 600 ? `${detail.slice(0, 600)}…` : detail, [
+    { text: 'Copy details', onPress: () => Clipboard.setStringAsync(report) },
+    { text: 'OK', style: 'cancel' },
+  ]);
+}
 
 export function QueueScreen() {
   const c = usePalette();
@@ -85,17 +96,27 @@ export function QueueScreen() {
           >
             Didn't finish
           </SectionLabel>
+          <Text style={[type.caption, { color: c.tertiary, marginBottom: space.s }]}>Tap one to see what went wrong.</Text>
           <Card>
             {q.finished.map((it, i) => (
               <View key={it.id}>
                 {i > 0 && <Hairline inset={space.l + 64 + space.m} />}
-                <ItemRow
-                  item={it}
-                  actions={[
-                    { icon: 'refresh', label: 'Retry', onPress: () => q.retry(it.id), tone: 'accent' },
-                    { icon: 'close', label: 'Remove', onPress: () => q.remove(it.id) },
-                  ]}
-                />
+                <Pressable
+                  onPress={() => it.status === 'failed' && showDetails(it, q.engine.version)}
+                  accessibilityHint="Shows the full error"
+                >
+                  {({ pressed }) => (
+                    <View style={{ opacity: pressed ? 0.6 : 1 }}>
+                      <ItemRow
+                        item={it}
+                        actions={[
+                          { icon: 'refresh', label: 'Retry', onPress: () => q.retry(it.id), tone: 'accent' },
+                          { icon: 'close', label: 'Remove', onPress: () => q.remove(it.id) },
+                        ]}
+                      />
+                    </View>
+                  )}
+                </Pressable>
               </View>
             ))}
           </Card>

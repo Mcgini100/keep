@@ -65,11 +65,11 @@ class KeepEngineModule : Module() {
       }
     }
 
-    AsyncFunction("download") { id: String, url: String, kind: String, quality: String, cookies: String?, promise: Promise ->
+    AsyncFunction("download") { id: String, url: String, kind: String, quality: String, cookies: String?, cookieDomain: String?, promise: Promise ->
       cancelled.remove(id)
       worker.execute {
         try {
-          promise.resolve(runDownload(id, url, kind, quality, cookies))
+          promise.resolve(runDownload(id, url, kind, quality, cookies, cookieDomain ?: ".youtube.com"))
         } catch (e: Throwable) {
           if (cancelled.remove(id) || e is YoutubeDL.CanceledException) {
             promise.reject("ERR_CANCELLED", "Cancelled", e)
@@ -87,19 +87,35 @@ class KeepEngineModule : Module() {
       YoutubeDL.destroyProcessById(id)
     }
 
-    // ---- Instagram session (shared with the sign-in WebView) ---------------- //
+    // ---- Account sessions (shared with the sign-in WebView) ----------------- //
 
-    AsyncFunction("instagramCookies") {
-      val header = CookieManager.getInstance().getCookie("https://www.instagram.com")
-      if (header != null && header.contains("sessionid=")) header else null
+    /** The cookie header for a service, or null when not signed in. */
+    AsyncFunction("sessionCookies") { service: String ->
+      val (url, markers) = when (service) {
+        "youtube" -> "https://www.youtube.com" to listOf("SAPISID=", "__Secure-3PSID=", "LOGIN_INFO=")
+        else -> "https://www.instagram.com" to listOf("sessionid=")
+      }
+      val header = CookieManager.getInstance().getCookie(url)
+      if (header != null && markers.any { header.contains(it) }) header else null
     }.runOnQueue(Queues.MAIN)
 
-    AsyncFunction("signOutInstagram") { promise: Promise ->
+    /** Signs out of one service only, by expiring its cookies. */
+    AsyncFunction("signOut") { service: String, promise: Promise ->
       val cm = CookieManager.getInstance()
-      cm.removeAllCookies { removed ->
-        cm.flush()
-        promise.resolve(removed)
+      val targets = when (service) {
+        "youtube" -> listOf("https://www.youtube.com" to ".youtube.com", "https://accounts.google.com" to ".google.com")
+        else -> listOf("https://www.instagram.com" to ".instagram.com")
       }
+      for ((url, domain) in targets) {
+        val names = cm.getCookie(url)?.split(";")?.map { it.substringBefore("=").trim() }?.filter { it.isNotEmpty() }
+        names?.forEach { name ->
+          val expired = "$name=; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; Secure"
+          cm.setCookie(url, expired)
+          cm.setCookie(url, "$expired; Domain=$domain")
+        }
+      }
+      cm.flush()
+      promise.resolve(true)
     }.runOnQueue(Queues.MAIN)
   }
 
@@ -142,7 +158,14 @@ class KeepEngineModule : Module() {
     return req
   }
 
-  private fun runDownload(id: String, url: String, kind: String, quality: String, cookies: String?): Map<String, Any?> {
+  private fun runDownload(
+    id: String,
+    url: String,
+    kind: String,
+    quality: String,
+    cookies: String?,
+    cookieDomain: String
+  ): Map<String, Any?> {
     emit(id, "preparing", 0.0)
     ensureReady()
 
@@ -150,7 +173,7 @@ class KeepEngineModule : Module() {
       deleteRecursively()
       mkdirs()
     }
-    val cookieFile = cookies?.let { writeCookieFile(jobDir, it) }
+    val cookieFile = cookies?.let { writeCookieFile(jobDir, it, cookieDomain) }
 
     // 1. Metadata — gives the UI a title and thumbnail straight away, and tells us
     //    how many streams (video + audio) will be fetched so progress is honest.
@@ -225,14 +248,16 @@ class KeepEngineModule : Module() {
   }
 
   /** Converts a WebView cookie header into the Netscape file yt-dlp reads. */
-  private fun writeCookieFile(dir: File, header: String): File {
+  private fun writeCookieFile(dir: File, header: String, domain: String): File {
     val expiry = System.currentTimeMillis() / 1000 + 365L * 24 * 3600
+    val host = "www" + domain // e.g. www.youtube.com, for host-only __Host- cookies
     val lines = header.split(";").mapNotNull { pair ->
       val i = pair.indexOf('=')
       if (i <= 0) return@mapNotNull null
       val name = pair.substring(0, i).trim()
       val value = pair.substring(i + 1).trim()
-      ".instagram.com\tTRUE\t/\tTRUE\t$expiry\t$name\t$value"
+      if (name.startsWith("__Host-")) "$host\tFALSE\t/\tTRUE\t$expiry\t$name\t$value"
+      else "$domain\tTRUE\t/\tTRUE\t$expiry\t$name\t$value"
     }
     return File(dir, "cookies.txt").apply {
       writeText("# Netscape HTTP Cookie File\n" + lines.joinToString("\n") + "\n")

@@ -23,13 +23,24 @@ export type DownloadResult = {
   duration?: number | null;
 };
 
+export type Service = 'youtube' | 'instagram';
+
+const COOKIE_DOMAIN: Record<Service, string> = { youtube: '.youtube.com', instagram: '.instagram.com' };
+
 type NativeEngine = {
   prepare(): Promise<{ version: string | null }>;
   update(): Promise<{ updated: boolean; version: string | null }>;
-  download(id: string, url: string, kind: string, quality: string, cookies: string | null): Promise<DownloadResult>;
+  download(
+    id: string,
+    url: string,
+    kind: string,
+    quality: string,
+    cookies: string | null,
+    cookieDomain: string | null,
+  ): Promise<DownloadResult>;
   cancel(id: string): boolean;
-  instagramCookies(): Promise<string | null>;
-  signOutInstagram(): Promise<boolean>;
+  sessionCookies(service: Service): Promise<string | null>;
+  signOut(service: Service): Promise<boolean>;
   addListener(event: 'onProgress', listener: (e: ProgressEvent) => void): EventSubscription;
 };
 
@@ -46,11 +57,15 @@ function engine(): NativeEngine {
 export const Engine = {
   prepare: () => engine().prepare(),
   update: () => engine().update(),
-  download: (id: string, url: string, kind: string, quality: string, cookies: string | null) =>
-    engine().download(id, url, kind, quality, cookies),
+  /** Downloads one link, using the signed-in session for that service if there is one. */
+  download: async (id: string, url: string, kind: string, quality: string, service: Service) => {
+    const cookies = await Engine.sessionCookies(service);
+    return engine().download(id, url, kind, quality, cookies, COOKIE_DOMAIN[service]);
+  },
   cancel: (id: string) => (native ? native.cancel(id) : false),
-  instagramCookies: () => (native ? native.instagramCookies() : Promise.resolve(null)),
-  signOutInstagram: () => (native ? native.signOutInstagram() : Promise.resolve(false)),
+  sessionCookies: (service: Service) =>
+    native ? native.sessionCookies(service).catch(() => null) : Promise.resolve(null),
+  signOut: (service: Service) => (native ? native.signOut(service) : Promise.resolve(false)),
   onProgress: (listener: (e: ProgressEvent) => void): EventSubscription | null =>
     native ? native.addListener('onProgress', listener) : null,
 };

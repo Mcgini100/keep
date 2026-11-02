@@ -2,22 +2,42 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Engine, engineAvailable } from '../../modules/keep-engine';
+import { Engine, engineAvailable, type Service } from '../../modules/keep-engine';
 import { Card, Hairline, Row, Segmented, SectionLabel, TextButton, ToggleRow } from '../components/ui';
 import { useQueue } from '../lib/store';
 import type { Kind, Quality } from '../lib/types';
 import { space, type, usePalette } from '../theme';
-import { InstagramSignIn } from './InstagramSignIn';
+import { SignInSheet } from './SignInSheet';
+
+const ACCOUNTS: { service: Service; label: string; detail: string; signedInDetail: string }[] = [
+  {
+    service: 'youtube',
+    label: 'YouTube',
+    detail: 'Needed when YouTube asks to confirm you’re not a bot. A spare Google account is best.',
+    signedInDetail: 'Signed in. Videos download as your account.',
+  },
+  {
+    service: 'instagram',
+    label: 'Instagram',
+    detail: 'Makes reels and posts download far more reliably.',
+    signedInDetail: 'Signed in. Reels and posts download as your account.',
+  },
+];
 
 export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const c = usePalette();
   const q = useQueue();
   const s = q.settings;
-  const [igSignedIn, setIgSignedIn] = useState(false);
-  const [igSheet, setIgSheet] = useState(false);
+  const [signedIn, setSignedIn] = useState<Record<Service, boolean>>({ youtube: false, instagram: false });
+  const [sheet, setSheet] = useState<Service | null>(null);
+
+  const refresh = async () => {
+    const [yt, ig] = await Promise.all([Engine.sessionCookies('youtube'), Engine.sessionCookies('instagram')]);
+    setSignedIn({ youtube: !!yt, instagram: !!ig });
+  };
 
   useEffect(() => {
-    if (visible) Engine.instagramCookies().then((v) => setIgSignedIn(!!v)).catch(() => {});
+    if (visible) refresh().catch(() => {});
   }, [visible]);
 
   const e = q.engine;
@@ -67,31 +87,32 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
             onChange={(v) => q.updateSettings({ quality: v })}
           />
 
-          <SectionLabel>Instagram</SectionLabel>
+          <SectionLabel>Accounts</SectionLabel>
           <Card>
-            <Row
-              label={igSignedIn ? 'Signed in' : 'Sign in'}
-              detail={
-                igSignedIn
-                  ? 'Reels and posts download as your account.'
-                  : 'Optional. Makes Instagram downloads far more reliable.'
-              }
-            >
-              {igSignedIn ? (
-                <TextButton
-                  label="Sign out"
-                  tone="danger"
-                  onPress={async () => {
-                    await Engine.signOutInstagram();
-                    setIgSignedIn(false);
-                    q.tap();
-                  }}
-                />
-              ) : (
-                <TextButton label="Sign in" onPress={() => setIgSheet(true)} disabled={!engineAvailable} />
-              )}
-            </Row>
+            {ACCOUNTS.map((a, i) => (
+              <View key={a.service}>
+                {i > 0 && <Hairline inset={space.l} />}
+                <Row label={a.label} detail={signedIn[a.service] ? a.signedInDetail : a.detail}>
+                  {signedIn[a.service] ? (
+                    <TextButton
+                      label="Sign out"
+                      tone="danger"
+                      onPress={async () => {
+                        await Engine.signOut(a.service);
+                        await refresh();
+                        q.tap();
+                      }}
+                    />
+                  ) : (
+                    <TextButton label="Sign in" onPress={() => setSheet(a.service)} disabled={!engineAvailable} />
+                  )}
+                </Row>
+              </View>
+            ))}
           </Card>
+          <Text style={[type.caption, styles.foot, { color: c.secondary }]}>
+            Optional. You sign in on the real Google or Instagram page; Keep never sees your password.
+          </Text>
 
           <SectionLabel>Behaviour</SectionLabel>
           <Card>
@@ -132,14 +153,12 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
         </ScrollView>
       </SafeAreaView>
 
-      <InstagramSignIn
-        visible={igSheet}
+      <SignInSheet
+        service={sheet}
         onClose={(ok) => {
-          setIgSheet(false);
-          if (ok) {
-            setIgSignedIn(true);
-            q.tap('success');
-          }
+          setSheet(null);
+          refresh().catch(() => {});
+          if (ok) q.tap('success');
         }}
       />
     </Modal>

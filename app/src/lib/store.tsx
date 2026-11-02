@@ -57,7 +57,15 @@ const initial: State = {
   engine: { status: engineAvailable ? 'starting' : 'unavailable', version: null },
 };
 
-const reset = (it: Item): Item => ({ ...it, status: 'pending', progress: 0, error: null, speed: null, preparing: false });
+const reset = (it: Item): Item => ({
+  ...it,
+  status: 'pending',
+  progress: 0,
+  error: null,
+  errorDetail: null,
+  speed: null,
+  preparing: false,
+});
 
 function reducer(state: State, action: Action): State {
   switch (action.type) {
@@ -249,8 +257,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       patch({ status: 'downloading', progress: 0, error: null, preparing: true });
 
       try {
-        const cookies = item.platform === 'instagram' ? await Engine.instagramCookies() : null;
-        const res = await Engine.download(item.id, item.url, item.kind, item.quality, cookies);
+        const res = await Engine.download(item.id, item.url, item.kind, item.quality, item.platform);
 
         // Still wanted? (It may have been cancelled in the last instant.)
         const now = stateRef.current.items.find((i) => i.id === item.id);
@@ -289,7 +296,13 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
         dispatch({
           type: 'progress',
           id: item.id,
-          patch: { status: 'failed', error: friendlyError(err.message, item.platform), speed: null, preparing: false },
+          patch: {
+            status: 'failed',
+            error: friendlyError(err.message, item.platform),
+            errorDetail: err.message || null,
+            speed: null,
+            preparing: false,
+          },
         });
         tap('error');
       } finally {

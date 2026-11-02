@@ -26,6 +26,7 @@ export type Item = {
   uploader?: string | null;
   duration?: number | null;
   error?: string | null;
+  errorDetail?: string | null; // raw engine message, for "Copy details"
   localUri?: string | null;
   size?: number | null;
   savedToPhotos?: boolean;
