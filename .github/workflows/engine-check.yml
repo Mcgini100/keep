@@ -1,0 +1,54 @@
+name: Engine check
+
+# Runs the same yt-dlp setup the app uses on the phone (Python 3.12, latest
+# yt-dlp, QuickJS 2025-04-26, identical options) against a link, verbosely.
+# Note: GitHub's servers are datacenter IPs, which YouTube sometimes treats
+# differently from a phone on mobile data or Wi-Fi.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Link to test
+        required: true
+  push:
+    paths: ['.github/engine-check-url']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Engine like the phone's
+        run: |
+          set -x
+          mkdir -p eng && cd eng
+          curl -sSL -o yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp
+          curl -sSL -o qjs.tar.xz https://bellard.org/quickjs/quickjs-2025-04-26.tar.xz
+          tar xf qjs.tar.xz && make -C quickjs-2025-04-26 -j4 qjs >/dev/null
+          cp quickjs-2025-04-26/qjs ./libqjs.so
+          sudo apt-get install -y -qq ffmpeg >/dev/null
+          python yt-dlp --version
+
+      - name: Test
+        run: |
+          URL="${{ github.event.inputs.url }}"
+          [ -n "$URL" ] || URL="$(cat .github/engine-check-url)"
+          cd eng
+          COMMON=(--no-playlist --no-mtime --socket-timeout 30 --retries 5 --fragment-retries 5
+                  --remote-components ejs:github --js-runtimes "quickjs:$PWD/libqjs.so"
+                  -f "bv*+ba/b" -S "vcodec:h264,acodec:m4a")
+          echo "=== info ==="
+          python yt-dlp -v "${COMMON[@]}" --dump-json "$URL" > info.json 2> info.err; echo "exit=$?"
+          cat info.err
+          python -c "import json;d=json.load(open('info.json'));print('TITLE',d.get('title'));print('FORMAT',d.get('format'));print('PARTS',len(d.get('requested_formats') or []))" || true
+          echo "=== download ==="
+          python yt-dlp -v "${COMMON[@]}" --restrict-filenames -o "out/%(title).80B [%(id)s].%(ext)s" \
+            --merge-output-format mp4 --remux-video mp4 "$URL" 2>&1 | grep -v "^\[download\] *[0-9.]*% of" | tail -60
+          ls -la out || true

@@ -3,7 +3,7 @@ name: Build APK
 on:
   push:
     branches: [main]
-    paths-ignore: ['**.md', 'LICENSE']
+    paths-ignore: ['**.md', 'LICENSE', '.github/engine-check-url', '.github/workflows/engine-check.yml']
   workflow_dispatch:
 
 permissions:
