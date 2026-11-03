@@ -46,7 +46,8 @@
             "enableShrinkResourcesInReleaseBuilds": false
           }
         }
-      ]
+      ],
+      "expo-video"
     ]
   }
 }

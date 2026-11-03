@@ -115,6 +115,9 @@ function reducer(state: State, action: Action): State {
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
 async function saveToPhotos(uri: string): Promise<boolean> {
+  if (RNPlatform.OS === 'android' && Number(RNPlatform.Version) >= 29) {
+    return Engine.saveToGallery(uri);
+  }
   const perm = await requestPermissionsAsync(true);
   if (!perm.granted) return false;
   const album = await Album.get(ALBUM);
@@ -157,6 +160,7 @@ type Ctx = State & {
   updateSettings: (patch: Partial<Settings>) => void;
   updateEngine: () => Promise<void>;
   retryEngine: () => Promise<void>;
+  saveItemToGallery: (item: Item) => Promise<void>;
   tap: (style?: 'light' | 'success' | 'error') => void;
 };
 
@@ -346,6 +350,12 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     return items.length;
   }, []);
 
+  const saveItemToGallery = useCallback(async (item: Item) => {
+    if (!item.localUri || item.kind !== 'video') throw new Error('Video file is unavailable.');
+    if (!await saveToPhotos(item.localUri)) throw new Error('Gallery access was not granted.');
+    dispatch({ type: 'patch', id: item.id, patch: { savedToPhotos: true } });
+  }, []);
+
   const cancel = useCallback((id: string) => {
     dispatch({ type: 'patch', id, patch: { status: 'cancelled', speed: null, preparing: false } });
     Engine.cancel(id);
@@ -386,9 +396,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       updateSettings: (patch) => dispatch({ type: 'settings', patch }),
       updateEngine,
       retryEngine,
+      saveItemToGallery,
       tap,
     };
-  }, [state, enqueue, cancel, remove, setPaused, updateEngine, retryEngine, tap]);
+  }, [state, enqueue, cancel, remove, setPaused, updateEngine, retryEngine, saveItemToGallery, tap]);
 
   return <QueueContext.Provider value={value}>{children}</QueueContext.Provider>;
 }

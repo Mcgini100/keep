@@ -1,6 +1,11 @@
 package expo.modules.keepengine
 
 import android.content.Context
+import android.content.ContentValues
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.webkit.CookieManager
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
@@ -78,6 +83,40 @@ class KeepEngineModule : Module() {
           }
         } finally {
           File(context.cacheDir, "keep-jobs/$id").deleteRecursively()
+        }
+      }
+    }
+
+    // Android 10+ can add our own files to the shared gallery without requesting
+    // broad access to the user's existing photos and videos.
+    AsyncFunction("saveToGallery") { uri: String, promise: Promise ->
+      worker.execute {
+        var destination: Uri? = null
+        try {
+          check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { "Requires Android 10 or later" }
+          val parsed = Uri.parse(uri)
+          require(parsed.scheme == "file") { "Expected a local file" }
+          val source = File(requireNotNull(parsed.path)).canonicalFile
+          val library = File(context.filesDir, "Keep").canonicalFile
+          require(source.parentFile == library && source.isFile && source.length() > 0) { "Video file is missing" }
+          val resolver = context.contentResolver
+          val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, source.name)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Keep")
+            put(MediaStore.Video.Media.IS_PENDING, 1)
+          }
+          destination = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("Could not create the Gallery video")
+          val output = resolver.openOutputStream(destination, "w")
+            ?: throw IllegalStateException("Could not write the Gallery video")
+          source.inputStream().use { input -> output.use { input.copyTo(it) } }
+          val complete = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
+          check(resolver.update(destination, complete, null, null) > 0) { "Could not finish saving to Gallery" }
+          promise.resolve(true)
+        } catch (e: Throwable) {
+          destination?.let { runCatching { context.contentResolver.delete(it, null, null) } }
+          promise.reject("ERR_GALLERY", e.message ?: "Could not save to Gallery", e)
         }
       }
     }
