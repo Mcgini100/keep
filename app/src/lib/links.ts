@@ -43,6 +43,9 @@ export function detectPlatform(url: string): Platform | null {
 function clean(raw: string): string {
   let url = raw.trim().replace(/[)\].,;!?]+$/, '');
   if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  // yt-dlp's Instagram extractor expects the canonical host. Keep accepts
+  // mobile and short-domain shares, so normalize them before queueing.
+  url = url.replace(/^https?:\/\/(?:m\.instagram\.com|instagr\.am)(?=\/|[?#]|$)/i, 'https://www.instagram.com');
   return url;
 }
 

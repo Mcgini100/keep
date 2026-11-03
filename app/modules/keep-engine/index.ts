@@ -39,6 +39,7 @@ type NativeEngine = {
     cookieDomain: string | null,
   ): Promise<DownloadResult>;
   cancel(id: string): boolean;
+  saveToGallery(uri: string): Promise<boolean>;
   sessionCookies(service: Service): Promise<string | null>;
   signOut(service: Service): Promise<boolean>;
   addListener(event: 'onProgress', listener: (e: ProgressEvent) => void): EventSubscription;
@@ -62,6 +63,7 @@ export const Engine = {
     const cookies = await Engine.sessionCookies(service);
     return engine().download(id, url, kind, quality, cookies, COOKIE_DOMAIN[service]);
   },
+  saveToGallery: (uri: string) => engine().saveToGallery(uri),
   cancel: (id: string) => (native ? native.cancel(id) : false),
   sessionCookies: (service: Service) =>
     native ? native.sessionCookies(service).catch(() => null) : Promise.resolve(null),

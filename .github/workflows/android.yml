@@ -4,13 +4,15 @@ on:
   push:
     branches: [main]
     paths-ignore: ['**.md', 'LICENSE', '.github/engine-check-url', '.github/workflows/engine-check.yml']
+  pull_request:
+    paths-ignore: ['**.md', 'LICENSE', '.github/engine-check-url', '.github/workflows/engine-check.yml']
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: android-apk
+  group: android-apk-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -41,11 +43,17 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Regression tests
+        run: npm test
+
       - name: Typecheck
         run: npx tsc --noEmit
 
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Verify release optimizer is disabled
+        run: grep -qx 'android.enableMinifyInReleaseBuilds=false' android/gradle.properties
 
       - name: Build release APK
         working-directory: app/android
@@ -75,6 +83,7 @@ jobs:
           if-no-files-found: error
 
       - name: Publish release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.${{ github.run_number }}

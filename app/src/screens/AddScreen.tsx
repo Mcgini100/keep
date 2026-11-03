@@ -1,9 +1,10 @@
 import * as Clipboard from 'expo-clipboard';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Keyboard, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { IconButton, PlatformMark, PrimaryButton, Segmented, SectionLabel, TextButton } from '../components/ui';
 import { extractLinks, prettyUrl } from '../lib/links';
+import { appendClipboard, newlineAfterLinkInsertion } from '../lib/paste';
 import { useQueue } from '../lib/store';
 import type { Kind, Quality } from '../lib/types';
 import { radius, space, type, usePalette } from '../theme';
@@ -31,6 +32,8 @@ export function AddScreen({
   const [kind, setKind] = useState<Kind>(q.settings.kind);
   const [quality, setQuality] = useState<Quality>(q.settings.quality);
   const [notice, setNotice] = useState<string | null>(null);
+  const inputRef = useRef<React.ElementRef<typeof TextInput>>(null);
+  const selection = useRef({ start: 0, end: 0 });
 
   const links = useMemo(() => extractLinks(text), [text]);
   const valid = links.filter((l) => l.platform);
@@ -46,7 +49,12 @@ export function AddScreen({
   const paste = async () => {
     const clip = await Clipboard.getStringAsync();
     if (!clip) return setNotice('Clipboard is empty.');
-    setText(text ? `${text.trimEnd()}\n${clip}` : clip);
+    const next = appendClipboard(text, clip);
+    setText(next);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setNativeProps({ selection: { start: next.length, end: next.length } });
+    });
     setNotice(null);
     q.tap();
   };
@@ -83,9 +91,16 @@ export function AddScreen({
 
       <View style={[styles.input, { backgroundColor: c.surface }]}>
         <TextInput
+          ref={inputRef}
           value={text}
+          onSelectionChange={({ nativeEvent }) => { selection.current = nativeEvent.selection; }}
           onChangeText={(t) => {
-            setText(t);
+            const { start, end } = selection.current;
+            const insertion = newlineAfterLinkInsertion(text, t, start, end, (value) => extractLinks(value).some((link) => !!link.platform));
+            setText(insertion?.text ?? t);
+            if (insertion) requestAnimationFrame(() =>
+              inputRef.current?.setNativeProps({ selection: { start: insertion.cursor, end: insertion.cursor } }),
+            );
             setNotice(null);
           }}
           placeholder={'youtube.com/watch?v=…\ninstagram.com/reel/…'}

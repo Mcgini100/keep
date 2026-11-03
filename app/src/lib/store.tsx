@@ -115,6 +115,9 @@ function reducer(state: State, action: Action): State {
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
 async function saveToPhotos(uri: string): Promise<boolean> {
+  if (RNPlatform.OS === 'android' && Number(RNPlatform.Version) >= 29) {
+    return Engine.saveToGallery(uri);
+  }
   const perm = await requestPermissionsAsync(true);
   if (!perm.granted) return false;
   const album = await Album.get(ALBUM);
@@ -156,6 +159,8 @@ type Ctx = State & {
   setPaused: (paused: boolean) => void;
   updateSettings: (patch: Partial<Settings>) => void;
   updateEngine: () => Promise<void>;
+  retryEngine: () => Promise<void>;
+  saveItemToGallery: (item: Item) => Promise<void>;
   tap: (style?: 'light' | 'success' | 'error') => void;
 };
 
@@ -218,19 +223,22 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const retryEngine = useCallback(async () => {
+    if (!engineAvailable) return;
+    dispatch({ type: 'engine', engine: { status: 'starting', message: undefined } });
+    try {
+      const r = await Engine.prepare();
+      dispatch({ type: 'engine', engine: { version: r.version } });
+      if (Date.now() - stateRef.current.settings.lastEngineUpdate > DAY) await updateEngine();
+      else dispatch({ type: 'engine', engine: { status: 'ready' } });
+    } catch (e) {
+      dispatch({ type: 'engine', engine: { status: 'error', message: (e as Error).message } });
+    }
+  }, [updateEngine]);
+
   useEffect(() => {
-    if (!state.hydrated || !engineAvailable) return;
-    (async () => {
-      try {
-        const r = await Engine.prepare();
-        dispatch({ type: 'engine', engine: { status: 'ready', version: r.version } });
-        // YouTube and Instagram change often; keep yt-dlp fresh, at most once a day.
-        if (Date.now() - stateRef.current.settings.lastEngineUpdate > DAY) updateEngine();
-      } catch (e) {
-        dispatch({ type: 'engine', engine: { status: 'error', message: (e as Error).message } });
-      }
-    })();
-  }, [state.hydrated, updateEngine]);
+    if (state.hydrated && engineAvailable) retryEngine();
+  }, [state.hydrated, retryEngine]);
 
   useEffect(() => {
     const sub = Engine.onProgress((e) => {
@@ -316,7 +324,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!state.hydrated || state.paused || running.current || !engineAvailable) return;
-    if (state.engine.status === 'starting') return;
+    if (state.engine.status !== 'ready') return;
     const next = state.items.find((it) => it.status === 'pending');
     if (next) process(next);
   }, [state.hydrated, state.paused, state.items, state.engine.status, process]);
@@ -340,6 +348,12 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       }));
     if (items.length) dispatch({ type: 'add', items });
     return items.length;
+  }, []);
+
+  const saveItemToGallery = useCallback(async (item: Item) => {
+    if (!item.localUri || item.kind !== 'video') throw new Error('Video file is unavailable.');
+    if (!await saveToPhotos(item.localUri)) throw new Error('Gallery access was not granted.');
+    dispatch({ type: 'patch', id: item.id, patch: { savedToPhotos: true } });
   }, []);
 
   const cancel = useCallback((id: string) => {
@@ -381,9 +395,11 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       setPaused,
       updateSettings: (patch) => dispatch({ type: 'settings', patch }),
       updateEngine,
+      retryEngine,
+      saveItemToGallery,
       tap,
     };
-  }, [state, enqueue, cancel, remove, setPaused, updateEngine, tap]);
+  }, [state, enqueue, cancel, remove, setPaused, updateEngine, retryEngine, saveItemToGallery, tap]);
 
   return <QueueContext.Provider value={value}>{children}</QueueContext.Provider>;
 }

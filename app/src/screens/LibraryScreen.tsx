@@ -1,9 +1,11 @@
 import * as Sharing from 'expo-sharing';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import React, { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ItemRow } from '../components/ItemRow';
-import { Card, Empty, Hairline, Segmented } from '../components/ui';
+import { Card, Empty, Hairline, Segmented, TextButton } from '../components/ui';
 import { formatBytes } from '../lib/format';
 import { useQueue } from '../lib/store';
 import type { Item } from '../lib/types';
@@ -15,6 +17,8 @@ export function LibraryScreen() {
   const c = usePalette();
   const q = useQueue();
   const [filter, setFilter] = useState<Filter>('all');
+  const [playing, setPlaying] = useState<Item | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
   const items = useMemo(
     () => (filter === 'all' ? q.library : q.library.filter((i) => i.kind === filter)),
@@ -22,14 +26,38 @@ export function LibraryScreen() {
   );
   const total = q.library.reduce((n, i) => n + (i.size ?? 0), 0);
 
-  const open = async (item: Item) => {
-    if (!item.localUri) return;
-    if (!(await Sharing.isAvailableAsync())) return;
+  const open = (item: Item) => {
+    if (!item.localUri) return Alert.alert('File unavailable', 'This download cannot be opened.');
     q.tap();
-    await Sharing.shareAsync(item.localUri, {
-      mimeType: item.kind === 'audio' ? 'audio/mp4' : 'video/mp4',
-      dialogTitle: item.title ?? 'Share',
-    }).catch(() => {});
+    setPlaying(item);
+  };
+
+  const share = async (item: Item) => {
+    if (!item.localUri || !(await Sharing.isAvailableAsync())) {
+      Alert.alert('Unable to share', 'Sharing is not available on this device.');
+      return;
+    }
+    try {
+      await Sharing.shareAsync(item.localUri, {
+        mimeType: item.kind === 'audio' ? 'audio/mp4' : 'video/mp4',
+        dialogTitle: item.title ?? 'Share',
+      });
+    } catch (error) {
+      Alert.alert('Unable to share', (error as Error).message || 'Please try again.');
+    }
+  };
+
+  const saveGallery = async (item: Item) => {
+    if (savingId) return;
+    setSavingId(item.id);
+    try {
+      await q.saveItemToGallery(item);
+      Alert.alert('Saved to Gallery', 'Find this video in the Keep album.');
+    } catch (error) {
+      Alert.alert('Could not save to Gallery', (error as Error).message || 'Please try again.');
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const confirmDelete = (item: Item) => {
@@ -44,6 +72,7 @@ export function LibraryScreen() {
   };
 
   return (
+    <>
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={[type.largeTitle, { color: c.text }]}>Library</Text>
       <Text style={[type.callout, { color: c.secondary, marginBottom: space.xl }]}>
@@ -67,7 +96,7 @@ export function LibraryScreen() {
       )}
 
       {q.library.length === 0 ? (
-        <Empty icon="albums-outline" title="Nothing kept yet" body="Videos are also saved to a “Keep” album in Photos." />
+        <Empty icon="albums-outline" title="Nothing kept yet" body="Play your downloads here or save videos to Gallery." />
       ) : items.length === 0 ? (
         <Empty icon="search-outline" title={`No ${filter} files`} body="Try another filter." />
       ) : (
@@ -78,13 +107,16 @@ export function LibraryScreen() {
               <Pressable
                 onPress={() => open(it)}
                 onLongPress={() => confirmDelete(it)}
-                accessibilityHint="Opens the share sheet. Long press to delete."
+                accessibilityHint="Play this file. Long press to delete."
               >
                 {({ pressed }) => (
                   <View style={{ opacity: pressed ? 0.6 : 1 }}>
                     <ItemRow
                       item={it}
-                      actions={[{ icon: 'share-outline', label: 'Share', onPress: () => open(it), tone: 'accent' }]}
+                      actions={[
+                        ...(it.kind === 'video' ? [{ icon: 'download-outline' as const, label: 'Save to Gallery', onPress: () => saveGallery(it) }] : []),
+                        { icon: 'share-outline', label: 'Share', onPress: () => share(it), tone: 'accent' },
+                      ]}
                     />
                   </View>
                 )}
@@ -95,13 +127,35 @@ export function LibraryScreen() {
       )}
       {items.length > 0 && (
         <Text style={[type.caption, { color: c.tertiary, textAlign: 'center', marginTop: space.l }]}>
-          Tap to share or save elsewhere · Long press to delete
+          Tap to play · Use the icons to save or share · Long press to delete
         </Text>
       )}
     </ScrollView>
+    <Modal visible={!!playing} animationType="slide" onRequestClose={() => setPlaying(null)}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }}>
+        <View style={styles.playerHeader}>
+          <Text numberOfLines={1} style={[type.headline, { color: c.text, flex: 1 }]}>{playing?.title || 'Playback'}</Text>
+          <TextButton label="Done" onPress={() => setPlaying(null)} />
+        </View>
+        {playing?.localUri && <Player uri={playing.localUri} />}
+      </SafeAreaView>
+    </Modal>
+    </>
   );
 }
 
+function Player({ uri }: { uri: string }) {
+  const player = useVideoPlayer(uri, (instance) => instance.play());
+  React.useEffect(() => {
+    const subscription = player.addListener('statusChange', ({ status, error }) => {
+      if (status === 'error') Alert.alert('Unable to play', error?.message || 'This file could not be played.');
+    });
+    return () => subscription.remove();
+  }, [player]);
+  return <VideoView player={player} nativeControls contentFit="contain" style={{ flex: 1, backgroundColor: '#000' }} />;
+}
+
 const styles = StyleSheet.create({
+  playerHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.l, paddingVertical: space.m, gap: space.m },
   container: { paddingHorizontal: space.xl, paddingTop: space.l, paddingBottom: space.xxxl },
 });
