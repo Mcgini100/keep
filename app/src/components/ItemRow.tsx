@@ -22,6 +22,7 @@ function statusLine(item: Item): string {
     case 'done':
       return [
         item.kind === 'audio' ? 'Audio' : 'Video',
+        item.kind === 'video' && !item.savedToPhotos ? 'Not saved to Gallery' : null,
         formatDuration(item.duration),
         formatBytes(item.size),
         relativeTime(item.finishedAt),

@@ -96,7 +96,7 @@ export function LibraryScreen() {
       )}
 
       {q.library.length === 0 ? (
-        <Empty icon="albums-outline" title="Nothing kept yet" body="Videos are also saved to a “Keep” album in Photos." />
+        <Empty icon="albums-outline" title="Nothing kept yet" body="Play your downloads here or save videos to Gallery." />
       ) : items.length === 0 ? (
         <Empty icon="search-outline" title={`No ${filter} files`} body="Try another filter." />
       ) : (
