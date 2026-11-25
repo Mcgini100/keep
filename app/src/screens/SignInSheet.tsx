@@ -24,6 +24,12 @@ const SERVICES: Record<Service, { title: string; url: string; userAgent?: string
     url: 'https://www.instagram.com/accounts/login/',
     note: "Sign in on Instagram's page. Keep only keeps the session, never your password.",
   },
+  x: {
+    title: 'X',
+    url: 'https://x.com/i/flow/login',
+    userAgent: MOBILE_CHROME,
+    note: "Sign in on X's page. Keep only keeps the session, never your password.",
+  },
 };
 
 /** Signs in on the service's own page and reuses only the session cookie. */

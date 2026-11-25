@@ -25,7 +25,7 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
   const c = usePalette();
   const q = useQueue();
   const insets = useSafeAreaInsets();
-  const waiting = (q.current ? 1 : 0) + q.pending.length;
+  const waiting = q.active.length + q.pending.length;
 
   return (
     <View

@@ -195,7 +195,14 @@ export function ProgressBar({ value, height = 4 }: { value: number; height?: num
 
 export function PlatformMark({ platform, size = 14 }: { platform: Platform | null; size?: number }) {
   const c = usePalette();
-  const name = platform === 'youtube' ? 'logo-youtube' : platform === 'instagram' ? 'logo-instagram' : 'link';
+  const name =
+    platform === 'youtube'
+      ? 'logo-youtube'
+      : platform === 'instagram'
+        ? 'logo-instagram'
+        : platform === 'x'
+          ? 'logo-x'
+          : 'link';
   return <Ionicons name={name} size={size} color={c.secondary} />;
 }
 

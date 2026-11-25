@@ -103,7 +103,7 @@ export function AddScreen({
             );
             setNotice(null);
           }}
-          placeholder={'youtube.com/watch?v=…\ninstagram.com/reel/…'}
+          placeholder={'youtube.com/watch?v=…\ninstagram.com/reel/…\nx.com/user/status/…'}
           placeholderTextColor={c.tertiary}
           multiline
           autoCapitalize="none"

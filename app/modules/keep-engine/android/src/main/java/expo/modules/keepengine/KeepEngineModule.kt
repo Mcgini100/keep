@@ -18,17 +18,34 @@ import org.json.JSONObject
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 /**
  * On-device download engine.
  *
  * Wraps yt-dlp (with its bundled Python, QuickJS and ffmpeg) so the phone itself
- * fetches the media — no server needed. All work runs on one background thread,
- * which keeps downloads strictly sequential and stops an engine update from
- * swapping yt-dlp out from under a running download.
+ * fetches the media — no server needed.
+ *
+ * Downloads run on a small pool so several links can download at once; each
+ * yt-dlp job is its own process. How many actually run is decided by the app
+ * (Settings → Downloads at once); the pool size is only a hard ceiling.
+ * Startup and updates run on their own thread, and an update takes the engine
+ * lock exclusively so yt-dlp is never swapped out from under a running download.
  */
 class KeepEngineModule : Module() {
-  private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "keep-engine") }
+  private val control = Executors.newSingleThreadExecutor { r -> Thread(r, "keep-engine-control") }
+  private val downloadThreads = AtomicInteger()
+  private val downloads = Executors.newFixedThreadPool(MAX_PARALLEL) { r ->
+    Thread(r, "keep-engine-download-${downloadThreads.incrementAndGet()}")
+  }
+  private val gallery = Executors.newSingleThreadExecutor { r -> Thread(r, "keep-engine-gallery") }
+  /** Downloads share the read side; an engine update needs the write side. */
+  private val engineLock = ReentrantReadWriteLock()
+  /** Guards picking a free file name in the library when jobs finish together. */
+  private val libraryLock = Any()
   private val cancelled = Collections.synchronizedSet(HashSet<String>())
 
   @Volatile private var ready = false
@@ -43,7 +60,7 @@ class KeepEngineModule : Module() {
 
     /** Unpacks the runtime on first launch (a few seconds) and reports the yt-dlp version. */
     AsyncFunction("prepare") { promise: Promise ->
-      worker.execute {
+      control.execute {
         try {
           ensureReady()
           promise.resolve(mapOf("version" to YoutubeDL.version(context)))
@@ -54,10 +71,11 @@ class KeepEngineModule : Module() {
     }
 
     AsyncFunction("update") { promise: Promise ->
-      worker.execute {
+      control.execute {
         try {
           ensureReady()
-          val status = YoutubeDL.updateYoutubeDL(context, YoutubeDL.UpdateChannel.STABLE)
+          // Waits for running downloads to finish; new ones wait for the update.
+          val status = engineLock.write { YoutubeDL.updateYoutubeDL(context, YoutubeDL.UpdateChannel.STABLE) }
           promise.resolve(
             mapOf(
               "updated" to (status == YoutubeDL.UpdateStatus.DONE),
@@ -72,9 +90,11 @@ class KeepEngineModule : Module() {
 
     AsyncFunction("download") { id: String, url: String, kind: String, quality: String, cookies: String?, cookieDomain: String?, promise: Promise ->
       cancelled.remove(id)
-      worker.execute {
+      downloads.execute {
         try {
-          promise.resolve(runDownload(id, url, kind, quality, cookies, cookieDomain ?: ".youtube.com"))
+          if (cancelled.contains(id)) throw YoutubeDL.CanceledException()
+          val result = engineLock.read { runDownload(id, url, kind, quality, cookies, cookieDomain ?: ".youtube.com") }
+          promise.resolve(result)
         } catch (e: Throwable) {
           if (cancelled.remove(id) || e is YoutubeDL.CanceledException) {
             promise.reject("ERR_CANCELLED", "Cancelled", e)
@@ -90,7 +110,7 @@ class KeepEngineModule : Module() {
     // Android 10+ can add our own files to the shared gallery without requesting
     // broad access to the user's existing photos and videos.
     AsyncFunction("saveToGallery") { uri: String, promise: Promise ->
-      worker.execute {
+      gallery.execute {
         var destination: Uri? = null
         try {
           check(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { "Requires Android 10 or later" }
@@ -132,6 +152,7 @@ class KeepEngineModule : Module() {
     AsyncFunction("sessionCookies") { service: String ->
       val (url, markers) = when (service) {
         "youtube" -> "https://www.youtube.com" to listOf("SAPISID=", "__Secure-3PSID=", "LOGIN_INFO=")
+        "x" -> "https://x.com" to listOf("auth_token=")
         else -> "https://www.instagram.com" to listOf("sessionid=")
       }
       val header = CookieManager.getInstance().getCookie(url)
@@ -147,6 +168,7 @@ class KeepEngineModule : Module() {
       val cm = CookieManager.getInstance()
       val targets = when (service) {
         "youtube" -> listOf("https://www.youtube.com" to ".youtube.com", "https://accounts.google.com" to ".google.com")
+        "x" -> listOf("https://x.com" to ".x.com", "https://twitter.com" to ".twitter.com")
         else -> listOf("https://www.instagram.com" to ".instagram.com")
       }
       for ((url, domain) in targets) {
@@ -299,9 +321,17 @@ class KeepEngineModule : Module() {
     }
 
     val library = File(context.filesDir, "Keep").apply { mkdirs() }
-    var target = File(library, produced.name)
-    var n = 1
-    while (target.exists()) target = File(library, "${produced.nameWithoutExtension} ($n).${produced.extension}").also { n++ }
+    // Two jobs can finish at the same moment with the same title; reserve the
+    // name atomically so neither overwrites the other.
+    val target = synchronized(libraryLock) {
+      var candidate = File(library, produced.name)
+      var n = 1
+      while (!candidate.createNewFile()) {
+        candidate = File(library, "${produced.nameWithoutExtension} ($n).${produced.extension}")
+        n++
+      }
+      candidate
+    }
     if (!produced.renameTo(target)) {
       produced.copyTo(target, overwrite = true)
       produced.delete()
@@ -371,6 +401,11 @@ class KeepEngineModule : Module() {
       .replace(Regex("https?://[^\\s]+"), "[URL removed]")
       .replace(Regex("(?i)(sessionid|sapisid|__secure-[^=\\s]+|po_token)=([^\\s;]+)"), "$1=[redacted]")
     return "yt-dlp ${runCatching { YoutubeDL.version(context) }.getOrNull() ?: "unknown"}\n" + safe.takeLast(12000)
+  }
+
+  companion object {
+    /** Hard ceiling on simultaneous downloads; matches MAX_CONCURRENCY in the app. */
+    private const val MAX_PARALLEL = 5
   }
 
   private fun JSONObject.optStringOrNull(key: String): String? =

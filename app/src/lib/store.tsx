@@ -8,6 +8,7 @@ import { Platform as RNPlatform } from 'react-native';
 import { Engine, engineAvailable } from '../../modules/keep-engine';
 import { friendlyError } from './errors';
 import type { ParsedLink } from './links';
+import { clampConcurrency, DEFAULT_CONCURRENCY, nextToStart } from './scheduler';
 import { ACTIVE, EngineState, Item, Kind, Quality, Settings } from './types';
 
 // --------------------------------------------------------------------------- //
@@ -25,6 +26,7 @@ export const defaultSettings: Settings = {
   haptics: true,
   watchClipboard: RNPlatform.OS === 'android',
   lastEngineUpdate: 0,
+  concurrency: DEFAULT_CONCURRENCY,
 };
 
 type State = {
@@ -145,7 +147,8 @@ export function deleteLocalFile(uri?: string | null) {
 // --------------------------------------------------------------------------- //
 
 type Ctx = State & {
-  current: Item | undefined;
+  /** Every download currently running, in queue order. */
+  active: Item[];
   pending: Item[];
   finished: Item[];
   library: Item[];
@@ -170,7 +173,9 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initial);
   const stateRef = useRef(state);
   stateRef.current = state;
-  const running = useRef<string | null>(null);
+  // Ids of the downloads running right now. A ref, so the scheduler sees
+  // changes immediately rather than on the next render.
+  const running = useRef<Set<string>>(new Set());
 
   // ---- persistence -------------------------------------------------------- //
   useEffect(() => {
@@ -183,7 +188,14 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
         const items = (saved.items ?? []).map((it) => (ACTIVE.includes(it.status) ? reset(it) : it));
         dispatch({
           type: 'hydrate',
-          state: { items, paused: saved.paused ?? false, settings: { ...defaultSettings, ...(saved.settings ?? {}) } },
+          state: {
+            items,
+            paused: saved.paused ?? false,
+            settings: (() => {
+              const settings = { ...defaultSettings, ...(saved.settings ?? {}) };
+              return { ...settings, concurrency: clampConcurrency(settings.concurrency) };
+            })(),
+          },
         });
       } catch {
         dispatch({ type: 'hydrate', state: {} });
@@ -257,10 +269,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     return () => sub?.remove();
   }, []);
 
-  // ---- the sequential worker --------------------------------------------- //
+  // ---- the concurrent worker pool ---------------------------------------- //
   const process = useCallback(
     async (item: Item) => {
-      running.current = item.id;
+      running.current.add(item.id);
       const patch = (p: Partial<Item>) => dispatch({ type: 'patch', id: item.id, patch: p });
       patch({ status: 'downloading', progress: 0, error: null, preparing: true });
 
@@ -314,8 +326,8 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
         });
         tap('error');
       } finally {
-        if (running.current === item.id) running.current = null;
-        // Nudge the effect below to look for the next item.
+        running.current.delete(item.id);
+        // Nudge the effect below to fill the free slot.
         dispatch({ type: 'patch', id: '__tick__', patch: {} });
       }
     },
@@ -323,11 +335,10 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    if (!state.hydrated || state.paused || running.current || !engineAvailable) return;
+    if (!state.hydrated || state.paused || !engineAvailable) return;
     if (state.engine.status !== 'ready') return;
-    const next = state.items.find((it) => it.status === 'pending');
-    if (next) process(next);
-  }, [state.hydrated, state.paused, state.items, state.engine.status, process]);
+    for (const next of nextToStart(state.items, running.current, state.settings.concurrency)) process(next);
+  }, [state.hydrated, state.paused, state.items, state.engine.status, state.settings.concurrency, process]);
 
   // ---- actions ------------------------------------------------------------ //
   const enqueue = useCallback((links: ParsedLink[], kind: Kind, quality: Quality) => {
@@ -369,10 +380,11 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setPaused = useCallback((paused: boolean) => {
-    const id = running.current;
-    if (paused && id) {
-      dispatch({ type: 'patch', id, patch: { status: 'pending', progress: 0, speed: null, preparing: false } });
-      Engine.cancel(id);
+    if (paused) {
+      for (const id of [...running.current]) {
+        dispatch({ type: 'patch', id, patch: { status: 'pending', progress: 0, speed: null, preparing: false } });
+        Engine.cancel(id);
+      }
     }
     dispatch({ type: 'pause', paused });
   }, []);
@@ -381,7 +393,7 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
     const items = state.items;
     return {
       ...state,
-      current: items.find((i) => ACTIVE.includes(i.status)),
+      active: items.filter((i) => ACTIVE.includes(i.status)),
       pending: items.filter((i) => i.status === 'pending'),
       finished: items.filter((i) => i.status === 'failed' || i.status === 'cancelled'),
       library: items.filter((i) => i.status === 'done').sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0)),
@@ -393,7 +405,11 @@ export function QueueProvider({ children }: { children: React.ReactNode }) {
       clearFinished: () => dispatch({ type: 'clearFinished' }),
       moveToTop: (id) => dispatch({ type: 'moveToTop', id }),
       setPaused,
-      updateSettings: (patch) => dispatch({ type: 'settings', patch }),
+      updateSettings: (patch) =>
+        dispatch({
+          type: 'settings',
+          patch: patch.concurrency === undefined ? patch : { ...patch, concurrency: clampConcurrency(patch.concurrency) },
+        }),
       updateEngine,
       retryEngine,
       saveItemToGallery,
