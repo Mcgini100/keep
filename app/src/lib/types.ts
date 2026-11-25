@@ -41,6 +41,8 @@ export type Settings = {
   haptics: boolean;
   watchClipboard: boolean;
   lastEngineUpdate: number;
+  /** Downloads that may run at the same time (1–5). */
+  concurrency: number;
 };
 
 export type EngineState = {

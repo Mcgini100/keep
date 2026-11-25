@@ -1,6 +1,6 @@
 # Keep
 
-A quiet, focused Android app for saving YouTube and Instagram videos. Paste one link or a whole list, and Keep downloads them one after another, entirely on your phone. No server, no account, no computer needed.
+A quiet, focused Android app for saving YouTube, Instagram and X (Twitter) videos. Paste one link or a whole list, and Keep downloads several at once, entirely on your phone. No server, no account, no computer needed.
 
 ## ⬇️ Download
 
@@ -30,27 +30,27 @@ Keep follows Jony Ive's industrial design principles: as little design as possib
 ## Features
 
 - **Paste many links at once.** Put them one per line, separate them with commas, or leave them inside a message. Duplicates and unsupported links are filtered out before you start.
-- **Sequential queue.** One download at a time, in the order you added them.
-- **Queue control.** Pause and resume, cancel the current item, move any item to the top, or remove items.
+- **Concurrent queue.** Up to five downloads run side by side (three by default), started in the order you added them. Choose how many under **Settings → Downloads at once**; set it to 1 for the old one-at-a-time behaviour.
+- **Queue control.** Pause and resume everything, cancel any running item, move any item to the top, or remove items.
 - **Retry.** Retry one failed download, or all of them at once.
 - **Formats.** Video (MP4, H.264 for universal playback) or audio only (M4A), at Best, 1080p, 720p, 480p or 360p.
 - **Live progress.** Shows speed and percentage, then the merge step.
 - **Gallery.** Videos are saved to a **Keep** album in your Gallery. You can turn this off.
 - **Library.** Everything you've kept, filtered by video or audio. Tap to share, long press to delete.
 - **Clipboard.** Open Keep with a link copied and it offers to add it.
-- **YouTube and Instagram sign-in (optional).** YouTube now often asks to *confirm you're not a bot*, and Instagram blocks most signed-out downloads. Sign in once under **Settings → Accounts**, on the real Google or Instagram page inside the app, and downloads use your session. Keep stores only the session, never your password. A spare Google account is safest.
+- **YouTube, Instagram and X sign-in (optional).** YouTube now often asks to *confirm you're not a bot*, and Instagram blocks most signed-out downloads. X needs a session for protected accounts and posts marked sensitive. Sign in once under **Settings → Accounts**, on the real Google, Instagram or X page inside the app, and downloads use your session. Keep stores only the session, never your password. A spare Google account is safest.
 - **Error details.** Tap a failed download to see exactly what went wrong, and copy it to share.
-- **Self-updating engine.** yt-dlp updates itself once a day, or whenever you tap **Update** in Settings, so downloads keep working when YouTube or Instagram change.
+- **Self-updating engine.** yt-dlp updates itself once a day, or whenever you tap **Update** in Settings, so downloads keep working when YouTube, Instagram or X change.
 - **Survives restarts.** The queue, library and settings are saved. Interrupted downloads start again automatically.
 
-Supported links: YouTube videos, Shorts, Music and live replays, and Instagram posts, reels and IGTV.
+Supported links: YouTube videos, Shorts, Music and live replays; Instagram posts, reels and IGTV; and X / Twitter posts with video or GIFs (`x.com` or `twitter.com`, including `/video/2` for a post's second video).
 
 ## How it works
 
 Keep runs [yt-dlp](https://github.com/yt-dlp/yt-dlp) on the phone itself through [youtubedl-android](https://github.com/yausername/youtubedl-android). That library bundles Python, ffmpeg and the QuickJS JavaScript runtime that YouTube now requires. A small native module (`app/modules/keep-engine`) connects it to the React Native interface.
 
 ```
-paste links ─► queue ─► engine (yt-dlp + ffmpeg, on-device) ─► Keep library ─► Gallery album
+paste links ─► queue ─► engine pool (N × yt-dlp + ffmpeg, on-device) ─► Keep library ─► Gallery album
 ```
 
 ## Building
@@ -75,7 +75,8 @@ app/
   modules/keep-engine/       native Android module wrapping yt-dlp + ffmpeg
   src/theme.ts               colours, spacing, type scale
   src/lib/links.ts           link extraction and platform detection
-  src/lib/store.tsx          queue state and sequential worker
+  src/lib/store.tsx          queue state and concurrent worker pool
+  src/lib/scheduler.ts       picks which pending items start next
   src/screens/               Add, Queue, Library, Settings, Instagram sign-in
   src/components/            shared UI pieces
 .github/workflows/android.yml  builds and publishes the APK

@@ -23,18 +23,28 @@ const ACCOUNTS: { service: Service; label: string; detail: string; signedInDetai
     detail: 'Makes reels and posts download far more reliably.',
     signedInDetail: 'Session saved. Instagram may require verification.',
   },
+  {
+    service: 'x',
+    label: 'X (Twitter)',
+    detail: 'Needed for posts from protected or sensitive-media accounts.',
+    signedInDetail: 'Session saved. X may still limit downloads.',
+  },
 ];
 
 export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const c = usePalette();
   const q = useQueue();
   const s = q.settings;
-  const [signedIn, setSignedIn] = useState<Record<Service, boolean>>({ youtube: false, instagram: false });
+  const [signedIn, setSignedIn] = useState<Record<Service, boolean>>({ youtube: false, instagram: false, x: false });
   const [sheet, setSheet] = useState<Service | null>(null);
 
   const refresh = async () => {
-    const [yt, ig] = await Promise.all([Engine.sessionCookies('youtube'), Engine.sessionCookies('instagram')]);
-    setSignedIn({ youtube: !!yt, instagram: !!ig });
+    const [yt, ig, x] = await Promise.all([
+      Engine.sessionCookies('youtube'),
+      Engine.sessionCookies('instagram'),
+      Engine.sessionCookies('x'),
+    ]);
+    setSignedIn({ youtube: !!yt, instagram: !!ig, x: !!x });
   };
 
   useEffect(() => {
@@ -87,6 +97,17 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
             value={s.quality}
             onChange={(v) => q.updateSettings({ quality: v })}
           />
+          <Text style={[type.caption, { color: c.secondary, marginBottom: space.s, marginTop: space.l }]}>
+            Downloads at once
+          </Text>
+          <Segmented<string>
+            options={['1', '2', '3', '4', '5'].map((n) => ({ value: n, label: n }))}
+            value={String(s.concurrency)}
+            onChange={(v) => q.updateSettings({ concurrency: Number(v) })}
+          />
+          <Text style={[type.caption, styles.foot, { color: c.secondary }]}>
+            More at once finishes a long list sooner, but uses more data and battery, and some services slow you down.
+          </Text>
 
           <SectionLabel>Accounts</SectionLabel>
           <Card>
@@ -112,7 +133,7 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
             ))}
           </Card>
           <Text style={[type.caption, styles.foot, { color: c.secondary }]}>
-            Optional. You sign in on the real Google or Instagram page; Keep never sees your password.
+            Optional. You sign in on the real Google, Instagram or X page; Keep never sees your password.
           </Text>
 
           <SectionLabel>Behaviour</SectionLabel>
@@ -152,7 +173,7 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
             ) : null}
           </Card>
           <Text style={[type.caption, styles.foot, { color: c.secondary }]}>
-            Everything happens on this phone. Keep updates its engine once a day so YouTube and Instagram keep working.
+            Everything happens on this phone. Keep updates its engine once a day so YouTube, Instagram and X keep working.
           </Text>
 
           <Text style={[type.caption, styles.foot, { color: c.tertiary, textAlign: 'center', marginTop: space.xxl }]}>

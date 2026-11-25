@@ -23,9 +23,9 @@ export type DownloadResult = {
   duration?: number | null;
 };
 
-export type Service = 'youtube' | 'instagram';
+export type Service = 'youtube' | 'instagram' | 'x';
 
-const COOKIE_DOMAIN: Record<Service, string> = { youtube: '.youtube.com', instagram: '.instagram.com' };
+const COOKIE_DOMAIN: Record<Service, string> = { youtube: '.youtube.com', instagram: '.instagram.com', x: '.x.com' };
 
 type NativeEngine = {
   prepare(): Promise<{ version: string | null }>;

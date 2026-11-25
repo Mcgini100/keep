@@ -1,4 +1,4 @@
-export type Platform = 'youtube' | 'instagram';
+export type Platform = 'youtube' | 'instagram' | 'x';
 
 export type ParsedLink = {
   url: string;
@@ -17,10 +17,21 @@ const YT_HOSTS = new Set([
 ]);
 const IG_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'm.instagram.com', 'instagr.am']);
 const IG_PATH = /^\/(?:[\w.]+\/)?(p|reel|reels|tv|stories)\/[\w\-.]+/i;
+const X_HOSTS = new Set([
+  'x.com',
+  'www.x.com',
+  'mobile.x.com',
+  'twitter.com',
+  'www.twitter.com',
+  'mobile.twitter.com',
+]);
+// /<user>/status/<id>, /i/status/<id>, /i/web/status/<id>, optionally /video/1 or /photo/1.
+const X_PATH = /^\/(?:[\w]{1,15}|i(?:\/web)?)\/status(?:es)?\/(\d+)/i;
 
 // Anything that looks like a link, with or without a scheme.
+// The lookbehind stops "netflix.com/…" from being read as "x.com/…".
 const URL_PATTERN =
-  /(?:https?:\/\/)?(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|instagram\.com|instagr\.am)\/[^\s<>"'，、]+|https?:\/\/[^\s<>"']+/gi;
+  /(?<![\w.-])(?:https?:\/\/)?(?:www\.|m\.|music\.|mobile\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com|instagram\.com|instagr\.am|twitter\.com|x\.com)\/[^\s<>"'，、]+|https?:\/\/[^\s<>"']+/gi;
 
 function hostAndPath(url: string): { host: string; path: string } | null {
   const m = /^https?:\/\/([^/?#]+)([^?#]*)/i.exec(url);
@@ -37,6 +48,7 @@ export function detectPlatform(url: string): Platform | null {
     return null;
   }
   if (IG_HOSTS.has(hp.host)) return IG_PATH.test(hp.path) ? 'instagram' : null;
+  if (X_HOSTS.has(hp.host)) return X_PATH.test(hp.path) ? 'x' : null;
   return null;
 }
 
@@ -46,6 +58,8 @@ function clean(raw: string): string {
   // yt-dlp's Instagram extractor expects the canonical host. Keep accepts
   // mobile and short-domain shares, so normalize them before queueing.
   url = url.replace(/^https?:\/\/(?:m\.instagram\.com|instagr\.am)(?=\/|[?#]|$)/i, 'https://www.instagram.com');
+  // Twitter and X share one extractor; send every variant to x.com.
+  url = url.replace(/^https?:\/\/(?:(?:www|mobile)\.)?(?:twitter|x)\.com(?=\/|[?#]|$)/i, 'https://x.com');
   return url;
 }
 
@@ -56,6 +70,9 @@ export function linkKey(url: string): string {
   if (yt) return `yt:${yt[1]}`;
   const ig = /instagram\.com\/(?:[\w.]+\/)?(?:p|reels?|tv)\/([\w-]+)/i.exec(url);
   if (ig) return `ig:${ig[1]}`;
+  // A post can hold several videos; /video/2 is a different file from /video/1.
+  const x = /(?:twitter|x)\.com\/(?:[\w]{1,15}|i(?:\/web)?)\/status(?:es)?\/(\d+)(?:\/(?:video|photo)\/(\d+))?/i.exec(url);
+  if (x) return x[2] && x[2] !== '1' ? `x:${x[1]}/${x[2]}` : `x:${x[1]}`;
   return url.toLowerCase();
 }
 

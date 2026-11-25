@@ -18,10 +18,14 @@ export function friendlyError(raw: string | undefined, platform?: string): strin
   if (l.includes('login required') || l.includes('log in') || l.includes('private') || l.includes('cookies'))
     return platform === 'instagram'
       ? 'Instagram needs you signed in. Go to Settings → Instagram → Sign in.'
-      : 'This video is private or needs a sign-in. Try Settings → YouTube → Sign in.';
+      : platform === 'x'
+        ? 'This post is protected or marked sensitive. Go to Settings → X → Sign in.'
+        : 'This video is private or needs a sign-in. Try Settings → YouTube → Sign in.';
   if (l.includes('unavailable') || l.includes('removed') || l.includes('does not exist') || l.includes('404'))
     return 'This video is no longer available.';
   if (l.includes('unsupported url')) return "This link isn't supported.";
+  if (platform === 'x' && (l.includes('no video could be found') || l.includes('no video in this')))
+    return "This post doesn't contain a video.";
   if (l.includes('no video formats') || l.includes('requested format'))
     return "Couldn't find a playable version. Try another quality, or update the engine in Settings.";
   if (l.includes('unable to download') || l.includes('network') || l.includes('timed out') || l.includes('resolve'))

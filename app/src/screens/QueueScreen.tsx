@@ -20,8 +20,9 @@ function showDetails(item: Item, version: string | null) {
 export function QueueScreen() {
   const c = usePalette();
   const q = useQueue();
-  const empty = !q.current && q.pending.length === 0 && q.finished.length === 0;
-  const remaining = (q.current ? 1 : 0) + q.pending.length;
+  const empty = q.active.length === 0 && q.pending.length === 0 && q.finished.length === 0;
+  const remaining = q.active.length + q.pending.length;
+  const limit = q.settings.concurrency;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -42,22 +43,27 @@ export function QueueScreen() {
           ? 'Nothing waiting.'
           : q.paused
             ? `Paused · ${remaining} waiting`
-            : `${remaining} ${remaining === 1 ? 'item' : 'items'} · one at a time`}
+            : `${remaining} ${remaining === 1 ? 'item' : 'items'} · ${limit === 1 ? 'one at a time' : `up to ${limit} at once`}`}
       </Text>
 
       {empty && (
-        <Empty icon="arrow-down-circle-outline" title="Your queue is clear" body="Links you add will line up here and download in order." />
+        <Empty icon="arrow-down-circle-outline" title="Your queue is clear" body="Links you add will line up here and download side by side." />
       )}
 
-      {q.current && (
+      {q.active.length > 0 && (
         <>
-          <SectionLabel>Now</SectionLabel>
+          <SectionLabel>{q.active.length > 1 ? `Now · ${q.active.length}` : 'Now'}</SectionLabel>
           <Card>
-            <ItemRow
-              item={q.current}
-              large
-              actions={[{ icon: 'close', label: 'Cancel', onPress: () => q.cancel(q.current!.id) }]}
-            />
+            {q.active.map((it, i) => (
+              <View key={it.id}>
+                {i > 0 && <Hairline inset={space.l + 64 + space.m} />}
+                <ItemRow
+                  item={it}
+                  large={q.active.length === 1}
+                  actions={[{ icon: 'close', label: 'Cancel', onPress: () => q.cancel(it.id) }]}
+                />
+              </View>
+            ))}
           </Card>
         </>
       )}
