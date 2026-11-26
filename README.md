@@ -18,14 +18,17 @@ New versions install straight over the old one, and your library is kept. All bu
 
 ## Design
 
-Keep follows Jony Ive's industrial design principles: as little design as possible, with every detail considered.
+Keep is styled like a well-made archive: things worth keeping deserve a little ceremony.
 
-- **One thing at a time.** Each screen has a single job: add links, watch the queue, find your files.
-- **Restraint.** One accent colour, system type, hairline structure. No gradients, no decoration.
-- **Deference to content.** Thumbnails and titles carry the interface, and the chrome stays out of the way.
-- **Honest materials.** Native controls, the native share sheet, and your real Gallery.
-- **Considered motion and touch.** Buttons give slightly when pressed, progress moves smoothly, and haptics confirm what just happened.
-- **Light and dark.** Follows your phone's appearance.
+- **Paper and ink.** A warm paper background and near-black ink in light mode, reversed in dark mode, so it feels printed rather than lit.
+- **One signal colour.** A single orange marks only what you can act on or what is moving: the main button, the current tab, live progress.
+- **Three voices of type.** A serif display face (Instrument Serif) for titles, the system face for anything you read, and a monospaced face (JetBrains Mono) for the machinery: labels, counts, percentages and speeds.
+- **Rules, not boxes.** Lists open with a heavy ink rule and are divided by hairlines, the way an index page is set.
+- **Numbered sections.** Each screen carries a small kicker (*No. 02 — Queue*) and a superscript count.
+- **A floating dock.** Navigation sits in an ink pill above the content; the current tab expands in orange with its name.
+- **Honest motion.** Buttons give when pressed, progress eases forward, and a small orange dot breathes while a download is working.
+
+The icon is a bowl holding a ball: something kept. The source is `design/keep-icon.svg`.
 
 ## Features
 

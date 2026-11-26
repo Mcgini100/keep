@@ -1,5 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
+import { InstrumentSerif_400Regular, InstrumentSerif_400Regular_Italic } from '@expo-google-fonts/instrument-serif';
+import { JetBrainsMono_500Medium, JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono';
 import * as Clipboard from 'expo-clipboard';
+import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -11,16 +14,20 @@ import { AddScreen } from './src/screens/AddScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { QueueScreen } from './src/screens/QueueScreen';
 import { SettingsSheet } from './src/screens/SettingsSheet';
-import { radius, space, type, usePalette } from './src/theme';
+import { fonts, radius, space, type, usePalette } from './src/theme';
 
 type Tab = 'add' | 'queue' | 'library';
 
 const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; active: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'add', label: 'Add', icon: 'add-circle-outline', active: 'add-circle' },
-  { key: 'queue', label: 'Queue', icon: 'arrow-down-circle-outline', active: 'arrow-down-circle' },
+  { key: 'add', label: 'Add', icon: 'add', active: 'add' },
+  { key: 'queue', label: 'Queue', icon: 'arrow-down', active: 'arrow-down' },
   { key: 'library', label: 'Library', icon: 'albums-outline', active: 'albums' },
 ];
 
+/** Dock height, shared with the clipboard offer that floats above it. */
+const DOCK_HEIGHT = 64;
+
+/** A floating ink dock. The current tab is an orange pill with its name. */
 function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
   const c = usePalette();
   const q = useQueue();
@@ -29,38 +36,38 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
 
   return (
     <View
-      style={[
-        styles.tabbar,
-        { paddingBottom: Math.max(insets.bottom, space.s), backgroundColor: c.bg, borderTopColor: c.hairline },
-      ]}
+      pointerEvents="box-none"
+      style={[styles.dockWrap, { bottom: Math.max(insets.bottom, space.s) + space.s }]}
     >
-      {TABS.map((t) => {
-        const active = t.key === tab;
-        const color = active ? c.accent : c.tertiary;
-        return (
-          <Pressable
-            key={t.key}
-            style={styles.tab}
-            onPress={() => {
-              if (!active) q.tap();
-              onChange(t.key);
-            }}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: active }}
-            accessibilityLabel={t.key === 'queue' && waiting ? `Queue, ${waiting} waiting` : t.label}
-          >
-            <View>
-              <Ionicons name={active ? t.active : t.icon} size={26} color={color} />
-              {t.key === 'queue' && waiting > 0 && (
-                <View style={[styles.badge, { backgroundColor: c.accent, borderColor: c.bg }]}>
-                  <Text style={styles.badgeText}>{waiting > 99 ? '99+' : waiting}</Text>
+      <View style={[styles.dock, { backgroundColor: c.dock }]} accessibilityRole="tablist">
+        {TABS.map((t) => {
+          const active = t.key === tab;
+          return (
+            <Pressable
+              key={t.key}
+              style={[styles.tab, active && { backgroundColor: c.accentFill, paddingHorizontal: space.l }]}
+              onPress={() => {
+                if (!active) q.tap();
+                onChange(t.key);
+              }}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={t.key === 'queue' && waiting ? `Queue, ${waiting} waiting` : t.label}
+            >
+              <Ionicons name={active ? t.active : t.icon} size={22} color={active ? c.accentText : c.dockText} />
+              {active && <Text style={[styles.tabLabel, { color: c.accentText }]}>{t.label}</Text>}
+              {t.key === 'queue' && waiting > 0 && !active && (
+                <View style={[styles.badge, { backgroundColor: c.accentFill, borderColor: c.dock }]}>
+                  <Text style={[styles.badgeText, { color: c.accentText }]}>{waiting > 99 ? '99+' : waiting}</Text>
                 </View>
               )}
-            </View>
-            <Text style={[styles.tabLabel, { color }]}>{t.label}</Text>
-          </Pressable>
-        );
-      })}
+              {t.key === 'queue' && waiting > 0 && active && (
+                <Text style={[styles.tabLabel, { color: c.accentText, opacity: 0.6 }]}>{waiting > 99 ? '99+' : waiting}</Text>
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -69,6 +76,7 @@ function TabBar({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
 function ClipboardOffer({ onAccept }: { onAccept: (text: string) => void }) {
   const c = usePalette();
   const q = useQueue();
+  const insets = useSafeAreaInsets();
   const [offer, setOffer] = useState<{ text: string; count: number } | null>(null);
   const dismissed = useRef(new Set<string>());
   const y = useRef(new Animated.Value(0)).current;
@@ -106,6 +114,7 @@ function ClipboardOffer({ onAccept }: { onAccept: (text: string) => void }) {
       style={[
         styles.offer,
         {
+          bottom: Math.max(insets.bottom, space.s) + space.s + DOCK_HEIGHT + space.m,
           backgroundColor: c.surfaceRaised,
           borderColor: c.hairline,
           opacity: y,
@@ -125,7 +134,7 @@ function ClipboardOffer({ onAccept }: { onAccept: (text: string) => void }) {
           q.tap();
         }}
       >
-        <Text style={[type.callout, { color: c.accent, fontWeight: '600' }]}>Use</Text>
+        <Text style={[styles.use, { color: c.accent }]}>USE</Text>
       </Pressable>
       <Pressable hitSlop={8} onPress={() => setOffer(null)} style={{ marginLeft: space.l }}>
         <Ionicons name="close" size={18} color={c.tertiary} />
@@ -168,6 +177,15 @@ function Shell() {
 }
 
 export default function App() {
+  const [fontsLoaded, fontError] = useFonts({
+    InstrumentSerif_400Regular,
+    InstrumentSerif_400Regular_Italic,
+    JetBrainsMono_500Medium,
+    JetBrainsMono_700Bold,
+  });
+  // Fonts ship inside the APK, so this is a frame or two. If they ever fail,
+  // carry on with system type rather than blocking the app.
+  if (!fontsLoaded && !fontError) return <View style={{ flex: 1, backgroundColor: '#F3F0E8' }} />;
   return (
     <SafeAreaProvider>
       <QueueProvider>
@@ -178,17 +196,34 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  tabbar: {
+  dockWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  dock: {
+    height: DOCK_HEIGHT,
     flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: space.s,
+    alignItems: 'center',
+    gap: space.xs,
+    padding: 8,
+    borderRadius: radius.pill,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10,
   },
-  tab: { flex: 1, alignItems: 'center', gap: 2 },
-  tabLabel: { fontSize: 10, fontWeight: '500', letterSpacing: 0.1 },
+  tab: {
+    height: 48,
+    minWidth: 56,
+    borderRadius: radius.pill,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  tabLabel: { fontFamily: fonts.mono, fontSize: 12, letterSpacing: 1, textTransform: 'uppercase' },
   badge: {
     position: 'absolute',
-    top: -4,
-    right: -10,
+    top: 4,
+    right: 4,
     minWidth: 18,
     height: 18,
     borderRadius: 9,
@@ -197,12 +232,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  badgeText: { fontFamily: fonts.monoBold, fontSize: 10 },
+  use: { fontFamily: fonts.monoBold, fontSize: 12, letterSpacing: 1 },
   offer: {
     position: 'absolute',
     left: space.l,
     right: space.l,
-    bottom: 96,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: space.l,

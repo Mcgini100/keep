@@ -5,11 +5,11 @@ import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ItemRow } from '../components/ItemRow';
-import { Card, Empty, Hairline, Segmented, TextButton } from '../components/ui';
+import { Card, Empty, Hairline, ScreenTitle, Segmented, TextButton } from '../components/ui';
 import { formatBytes } from '../lib/format';
 import { useQueue } from '../lib/store';
 import type { Item } from '../lib/types';
-import { space, type, usePalette } from '../theme';
+import { DOCK_CLEARANCE, space, type, usePalette } from '../theme';
 
 type Filter = 'all' | 'video' | 'audio';
 
@@ -74,7 +74,7 @@ export function LibraryScreen() {
   return (
     <>
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={[type.largeTitle, { color: c.text }]}>Library</Text>
+      <ScreenTitle kicker="No. 03 — Library" title="Library" count={q.library.length} />
       <Text style={[type.callout, { color: c.secondary, marginBottom: space.xl }]}>
         {q.library.length === 0
           ? 'Finished downloads live here.'
@@ -103,7 +103,7 @@ export function LibraryScreen() {
         <Card>
           {items.map((it, i) => (
             <View key={it.id}>
-              {i > 0 && <Hairline inset={space.l + 64 + space.m} />}
+              {i > 0 && <Hairline />}
               <Pressable
                 onPress={() => open(it)}
                 onLongPress={() => confirmDelete(it)}
@@ -157,5 +157,5 @@ function Player({ uri }: { uri: string }) {
 
 const styles = StyleSheet.create({
   playerHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.l, paddingVertical: space.m, gap: space.m },
-  container: { paddingHorizontal: space.xl, paddingTop: space.l, paddingBottom: space.xxxl },
+  container: { paddingHorizontal: space.xl, paddingTop: space.l, paddingBottom: DOCK_CLEARANCE },
 });
