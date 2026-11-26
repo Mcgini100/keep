@@ -68,7 +68,7 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={{ flex: 1, backgroundColor: c.bg }} edges={['top', 'bottom']}>
         <View style={styles.bar}>
-          <Text style={[type.headline, { color: c.text }]}>Settings</Text>
+          <Text style={[type.title, { color: c.text }]}>Settings</Text>
           <View style={styles.done}>
             <TextButton label="Done" onPress={onClose} style={{ fontWeight: '600' }} />
           </View>
@@ -113,7 +113,7 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
           <Card>
             {ACCOUNTS.map((a, i) => (
               <View key={a.service}>
-                {i > 0 && <Hairline inset={space.l} />}
+                {i > 0 && <Hairline />}
                 <Row label={a.label} detail={signedIn[a.service] ? a.signedInDetail : a.detail}>
                   {signedIn[a.service] ? (
                     <TextButton
@@ -144,14 +144,14 @@ export function SettingsSheet({ visible, onClose }: { visible: boolean; onClose:
               value={s.saveToPhotos}
               onChange={(v) => q.updateSettings({ saveToPhotos: v })}
             />
-            <Hairline inset={space.l} />
+            <Hairline />
             <ToggleRow
               label="Offer copied links"
               detail="When you open Keep with a link on the clipboard."
               value={s.watchClipboard}
               onChange={(v) => q.updateSettings({ watchClipboard: v })}
             />
-            <Hairline inset={space.l} />
+            <Hairline />
             <ToggleRow label="Haptics" value={s.haptics} onChange={(v) => q.updateSettings({ haptics: v })} />
           </Card>
 

@@ -3,10 +3,10 @@ import React from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ItemRow } from '../components/ItemRow';
-import { Card, Empty, Hairline, SectionLabel, TextButton } from '../components/ui';
+import { Card, Empty, Hairline, ScreenTitle, SectionLabel, TextButton } from '../components/ui';
 import { useQueue } from '../lib/store';
 import type { Item } from '../lib/types';
-import { space, type, usePalette } from '../theme';
+import { DOCK_CLEARANCE, space, type, usePalette } from '../theme';
 
 function showDetails(item: Item, version: string | null) {
   const detail = item.errorDetail || item.error || 'No details.';
@@ -26,18 +26,22 @@ export function QueueScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.header}>
-        <Text style={[type.largeTitle, { color: c.text }]}>Queue</Text>
-        {remaining > 0 && (
-          <TextButton
-            label={q.paused ? 'Resume' : 'Pause'}
-            onPress={() => {
-              q.setPaused(!q.paused);
-              q.tap();
-            }}
-          />
-        )}
-      </View>
+      <ScreenTitle
+        kicker="No. 02 — Queue"
+        title="Queue"
+        count={remaining}
+        right={
+          remaining > 0 ? (
+            <TextButton
+              label={q.paused ? 'Resume' : 'Pause'}
+              onPress={() => {
+                q.setPaused(!q.paused);
+                q.tap();
+              }}
+            />
+          ) : undefined
+        }
+      />
       <Text style={[type.callout, { color: c.secondary }]}>
         {remaining === 0
           ? 'Nothing waiting.'
@@ -56,7 +60,7 @@ export function QueueScreen() {
           <Card>
             {q.active.map((it, i) => (
               <View key={it.id}>
-                {i > 0 && <Hairline inset={space.l + 64 + space.m} />}
+                {i > 0 && <Hairline />}
                 <ItemRow
                   item={it}
                   large={q.active.length === 1}
@@ -74,7 +78,7 @@ export function QueueScreen() {
           <Card>
             {q.pending.map((it, i) => (
               <View key={it.id}>
-                {i > 0 && <Hairline inset={space.l + 64 + space.m} />}
+                {i > 0 && <Hairline />}
                 <ItemRow
                   item={it}
                   actions={[
@@ -106,7 +110,7 @@ export function QueueScreen() {
           <Card>
             {q.finished.map((it, i) => (
               <View key={it.id}>
-                {i > 0 && <Hairline inset={space.l + 64 + space.m} />}
+                {i > 0 && <Hairline />}
                 <Pressable
                   onPress={() => it.status === 'failed' && showDetails(it, q.engine.version)}
                   accessibilityHint="Shows the full error"
@@ -133,6 +137,5 @@ export function QueueScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { paddingHorizontal: space.xl, paddingTop: space.l, paddingBottom: space.xxxl },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.xs },
+  container: { paddingHorizontal: space.xl, paddingTop: space.l, paddingBottom: DOCK_CLEARANCE },
 });

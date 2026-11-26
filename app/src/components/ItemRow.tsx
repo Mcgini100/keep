@@ -5,7 +5,7 @@ import { formatBytes, formatDuration, formatSpeed, relativeTime } from '../lib/f
 import { prettyUrl } from '../lib/links';
 import type { Item } from '../lib/types';
 import { space, type, usePalette } from '../theme';
-import { IconButton, ProgressBar, Thumb } from './ui';
+import { IconButton, ProgressBar, Pulse, Thumb } from './ui';
 
 function statusLine(item: Item): string {
   switch (item.status) {
@@ -13,9 +13,8 @@ function statusLine(item: Item): string {
       return `Waiting · ${item.kind === 'audio' ? 'Audio' : item.quality === 'best' ? 'Best quality' : `${item.quality}p`}`;
     case 'downloading': {
       if (item.preparing) return 'Getting ready…';
-      const pct = Math.round(item.progress * 100);
       const speed = formatSpeed(item.speed);
-      return `Downloading · ${pct}%${speed ? ` · ${speed}` : ''}`;
+      return speed ? `Downloading · ${speed}` : 'Downloading';
     }
     case 'processing':
       return item.kind === 'audio' ? 'Converting to audio…' : 'Finishing up…';
@@ -56,10 +55,24 @@ export function ItemRow({
           <Text numberOfLines={2} style={[type.callout, { color: c.text, fontWeight: '500' }]}>
             {item.title || prettyUrl(item.url)}
           </Text>
-          <Text numberOfLines={2} style={[type.caption, { color: failed ? c.danger : c.secondary, marginTop: 3 }]}>
-            {statusLine(item)}
-          </Text>
+          <View style={styles.status}>
+            {active && <Pulse size={6} />}
+            <Text
+              numberOfLines={2}
+              style={[
+                active ? type.mono : type.caption,
+                { color: failed ? c.danger : active ? c.text : c.secondary, flexShrink: 1 },
+              ]}
+            >
+              {statusLine(item)}
+            </Text>
+          </View>
         </View>
+        {active && !item.preparing && item.status === 'downloading' && (
+          <Text style={[type.figure, styles.pct, { color: c.accent, fontSize: large ? 22 : 15 }]}>
+            {String(Math.round(item.progress * 100)).padStart(2, '0')}%
+          </Text>
+        )}
         {actions?.length ? (
           <View style={styles.actions}>
             {actions.map((a) => (
@@ -78,8 +91,10 @@ export function ItemRow({
 }
 
 const styles = StyleSheet.create({
-  wrap: { paddingVertical: space.m, paddingHorizontal: space.l },
+  wrap: { paddingVertical: space.m + 2 },
   row: { flexDirection: 'row', alignItems: 'center' },
   text: { flex: 1, marginLeft: space.m },
   actions: { flexDirection: 'row', gap: space.l, marginLeft: space.m },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+  pct: { marginLeft: space.m, fontVariant: ['tabular-nums'] },
 });

@@ -4,6 +4,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Easing,
   Pressable,
   PressableProps,
   StyleProp,
@@ -16,7 +17,7 @@ import {
 } from 'react-native';
 
 import type { Platform } from '../lib/links';
-import { radius, space, type, usePalette } from '../theme';
+import { fonts, radius, space, type, usePalette } from '../theme';
 
 /* -------------------------------------------------------------------------- */
 /* Press feedback — a gentle give, like a physical key                         */
@@ -33,10 +34,48 @@ export function Tactile({
     Animated.spring(scale, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 0 }).start();
   return (
     <Pressable onPressIn={() => to(scaleTo)} onPressOut={() => to(1)} {...rest}>
-      <Animated.View style={[style, { transform: [{ scale }] }, rest.disabled && { opacity: 0.4 }]}>
+      <Animated.View style={[style, { transform: [{ scale }] }, rest.disabled && { opacity: 0.35 }]}>
         {children}
       </Animated.View>
     </Pressable>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Titles                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A masthead: a mono kicker, the serif title, and an optional count set as a
+ * superscript, the way a magazine numbers its sections.
+ */
+export function ScreenTitle({
+  kicker,
+  title,
+  count,
+  right,
+}: {
+  kicker: string;
+  title: string;
+  count?: number;
+  right?: React.ReactNode;
+}) {
+  const c = usePalette();
+  return (
+    <View style={styles.masthead}>
+      <View style={styles.kickerRow}>
+        <Text style={[type.micro, { color: c.secondary, textTransform: 'uppercase' }]}>{kicker}</Text>
+        {right}
+      </View>
+      <View style={styles.titleRow} accessibilityRole="header">
+        <Text style={[type.largeTitle, { color: c.text }]}>{title}</Text>
+        {count !== undefined && count > 0 && (
+          <Text style={[type.figure, styles.count, { color: c.accent }]}>
+            ({String(count).padStart(2, '0')})
+          </Text>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -62,12 +101,17 @@ export function PrimaryButton({
       disabled={disabled || loading}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={[styles.primary, { backgroundColor: c.accent }]}
+      style={[styles.primary, { backgroundColor: c.accentFill }]}
     >
       {loading ? (
         <ActivityIndicator color={c.accentText} />
       ) : (
-        <Text style={[type.headline, { color: c.accentText }]}>{label}</Text>
+        <>
+          <Text style={[type.headline, { color: c.accentText, flex: 1 }]}>{label}</Text>
+          <View style={[styles.primaryArrow, { backgroundColor: c.accentText }]}>
+            <Ionicons name="arrow-down" size={18} color={c.accentFill} />
+          </View>
+        </>
       )}
     </Tactile>
   );
@@ -89,10 +133,14 @@ export function TextButton({
   const c = usePalette();
   const color = tone === 'danger' ? c.danger : tone === 'secondary' ? c.secondary : c.accent;
   return (
-    <Pressable onPress={onPress} hitSlop={10} accessibilityRole="button" disabled={disabled}>
+    <Pressable onPress={onPress} hitSlop={10} accessibilityRole="button" accessibilityLabel={label} disabled={disabled}>
       {({ pressed }) => (
         <Text
-          style={[type.callout, { color, fontWeight: '500', opacity: disabled ? 0.35 : pressed ? 0.5 : 1 }, style]}
+          style={[
+            styles.textButton,
+            { color, opacity: disabled ? 0.35 : pressed ? 0.5 : 1 },
+            style,
+          ]}
         >
           {label}
         </Text>
@@ -124,7 +172,7 @@ export function IconButton({
 }
 
 /* -------------------------------------------------------------------------- */
-/* Segmented control                                                           */
+/* Segmented control — ink pills on a ruled track                              */
 /* -------------------------------------------------------------------------- */
 
 export function Segmented<T extends string>({
@@ -138,7 +186,7 @@ export function Segmented<T extends string>({
 }) {
   const c = usePalette();
   return (
-    <View style={[styles.segmented, { backgroundColor: c.surface }]} accessibilityRole="tablist">
+    <View style={[styles.segmented, { borderColor: c.hairline }]} accessibilityRole="tablist">
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -147,17 +195,9 @@ export function Segmented<T extends string>({
             onPress={() => onChange(o.value)}
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
-            style={[
-              styles.segment,
-              active && [styles.segmentActive, { backgroundColor: c.surfaceRaised }],
-            ]}
+            style={[styles.segment, active && { backgroundColor: c.text }]}
           >
-            <Text
-              style={[
-                type.caption,
-                { color: active ? c.text : c.secondary, fontWeight: active ? '600' : '500' },
-              ]}
-            >
+            <Text style={[type.caption, { color: active ? c.bg : c.secondary, fontWeight: active ? '600' : '500' }]}>
               {o.label}
             </Text>
           </Pressable>
@@ -171,21 +211,54 @@ export function Segmented<T extends string>({
 /* Progress                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export function ProgressBar({ value, height = 4 }: { value: number; height?: number }) {
+export function ProgressBar({ value, height = 3 }: { value: number; height?: number }) {
   const c = usePalette();
   const anim = useRef(new Animated.Value(value)).current;
   useEffect(() => {
-    Animated.timing(anim, { toValue: value, duration: 450, useNativeDriver: false }).start();
+    Animated.timing(anim, {
+      toValue: value,
+      duration: 450,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
   }, [value, anim]);
   const width = anim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'], extrapolate: 'clamp' });
   return (
     <View
-      style={{ height, borderRadius: height, backgroundColor: c.track, overflow: 'hidden' }}
+      style={{ height, backgroundColor: c.track, overflow: 'hidden' }}
       accessibilityRole="progressbar"
       accessibilityValue={{ min: 0, max: 100, now: Math.round(value * 100) }}
     >
-      <Animated.View style={{ height, width, borderRadius: height, backgroundColor: c.accent }} />
+      <Animated.View style={{ height, width, backgroundColor: c.accentFill }} />
     </View>
+  );
+}
+
+/** A small orange dot that breathes while something is working. */
+export function Pulse({ size = 8 }: { size?: number }) {
+  const c = usePalette();
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(v, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(v, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [v]);
+  return (
+    <Animated.View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: c.accentFill,
+        opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
+        transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1.1] }) }],
+      }}
+    />
   );
 }
 
@@ -227,8 +300,8 @@ export function Thumb({
         <PlatformMark platform={platform} size={18} />
       )}
       {audio && (
-        <View style={styles.badge}>
-          <Ionicons name="musical-note" size={10} color="#fff" />
+        <View style={[styles.badge, { backgroundColor: c.accentFill }]}>
+          <Ionicons name="musical-note" size={10} color={c.accentText} />
         </View>
       )}
     </View>
@@ -254,9 +327,12 @@ export function Hairline({ inset = 0 }: { inset?: number }) {
   return <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: c.hairline, marginLeft: inset }} />;
 }
 
+/** A ruled list: a heavy ink rule on top, a hairline beneath. No box. */
 export function Card({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
   const c = usePalette();
-  return <View style={[styles.card, { backgroundColor: c.surface }, style]}>{children}</View>;
+  return (
+    <View style={[styles.card, { borderTopColor: c.rule, borderBottomColor: c.hairline }, style]}>{children}</View>
+  );
 }
 
 export function Row({
@@ -297,7 +373,12 @@ export function ToggleRow({
   const c = usePalette();
   return (
     <Row label={label} detail={detail}>
-      <Switch value={value} onValueChange={onChange} trackColor={{ true: c.accent, false: c.track }} />
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ true: c.accentFill, false: c.track }}
+        thumbColor={value ? c.text : undefined}
+      />
     </Row>
   );
 }
@@ -305,42 +386,61 @@ export function ToggleRow({
 export function Empty({ icon, title, body }: { icon: keyof typeof Ionicons.glyphMap; title: string; body: string }) {
   const c = usePalette();
   return (
-    <View style={styles.empty}>
-      <Ionicons name={icon} size={36} color={c.tertiary} />
-      <Text style={[type.headline, { color: c.text, marginTop: space.l }]}>{title}</Text>
-      <Text style={[type.callout, { color: c.secondary, marginTop: space.xs, textAlign: 'center' }]}>{body}</Text>
+    <View style={[styles.empty, { borderTopColor: c.rule }]}>
+      <Ionicons name={icon} size={22} color={c.accent} />
+      <Text style={[type.title, { fontFamily: fonts.displayItalic, color: c.text, marginTop: space.m }]}>{title}</Text>
+      <Text style={[type.callout, { color: c.secondary, marginTop: space.s, maxWidth: 300 }]}>{body}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  masthead: { marginBottom: space.s },
+  kickerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    minHeight: 28,
+  },
+  titleRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  count: { marginTop: 8, marginLeft: 6 },
   primary: {
-    height: 52,
-    borderRadius: radius.m,
+    height: 60,
+    borderRadius: radius.pill,
+    paddingLeft: space.xl,
+    paddingRight: 8,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  primaryArrow: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textButton: {
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
   segmented: {
     flexDirection: 'row',
-    borderRadius: radius.s,
-    padding: 2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    padding: 3,
   },
   segment: {
     flex: 1,
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.s - 2,
-  },
-  segmentActive: {
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
-    elevation: 1,
+    borderRadius: radius.pill,
   },
   thumb: {
-    borderRadius: 8,
+    borderRadius: 4,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
@@ -352,7 +452,6 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -361,22 +460,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: space.s,
-    marginTop: space.xl,
+    marginTop: space.xxl,
   },
   card: {
-    borderRadius: radius.m,
-    overflow: 'hidden',
+    borderTopWidth: 1.5,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   row: {
-    minHeight: 52,
-    paddingHorizontal: space.l,
+    minHeight: 56,
     paddingVertical: space.m,
     flexDirection: 'row',
     alignItems: 'center',
   },
   empty: {
-    alignItems: 'center',
-    paddingVertical: space.xxxl * 1.5,
-    paddingHorizontal: space.xxl,
+    alignItems: 'flex-start',
+    paddingTop: space.xl,
+    marginTop: space.xl,
+    borderTopWidth: 1.5,
   },
 });

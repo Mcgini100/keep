@@ -2,12 +2,12 @@ import * as Clipboard from 'expo-clipboard';
 import React, { useMemo, useRef, useState } from 'react';
 import { Keyboard, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { IconButton, PlatformMark, PrimaryButton, Segmented, SectionLabel, TextButton } from '../components/ui';
+import { IconButton, PlatformMark, PrimaryButton, ScreenTitle, Segmented, SectionLabel, TextButton } from '../components/ui';
 import { extractLinks, prettyUrl } from '../lib/links';
 import { appendClipboard, newlineAfterLinkInsertion } from '../lib/paste';
 import { useQueue } from '../lib/store';
 import type { Kind, Quality } from '../lib/types';
-import { radius, space, type, usePalette } from '../theme';
+import { DOCK_CLEARANCE, fonts, radius, space, type, usePalette } from '../theme';
 
 const QUALITIES: { value: Quality; label: string }[] = [
   { value: 'best', label: 'Best' },
@@ -73,7 +73,8 @@ export function AddScreen({
   };
 
   const ctaLabel =
-    valid.length === 0 ? 'Add to queue' : valid.length === 1 ? 'Download' : `Download ${valid.length} in order`;
+    valid.length === 0 ? 'Add to queue' : valid.length === 1 ? 'Download' : `Download ${valid.length}`;
+  const atOnce = q.settings.concurrency;
 
   return (
     <ScrollView
@@ -81,15 +82,24 @@ export function AddScreen({
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
     >
-      <View style={styles.header}>
-        <Text style={[type.largeTitle, { color: c.text }]}>Keep</Text>
-        <IconButton name="settings-outline" label="Settings" onPress={onOpenSettings} />
-      </View>
-      <Text style={[type.callout, { color: c.secondary, marginBottom: space.xl }]}>
-        Paste one link or many. They'll download one after another.
+      <ScreenTitle
+        kicker="No. 01 — Add"
+        title="Keep"
+        right={<IconButton name="settings-outline" label="Settings" onPress={onOpenSettings} tone="text" />}
+      />
+      <Text style={[styles.tagline, { color: c.text }]}>
+        Save what you love,{' '}
+        <Text style={{ fontFamily: fonts.displayItalic, color: c.accent }}>on your phone.</Text>
+      </Text>
+      <Text style={[type.callout, { color: c.secondary, marginTop: space.m }]}>
+        Paste one link or a whole list.{' '}
+        {atOnce === 1 ? 'They download one after another.' : `Up to ${atOnce} download at once.`}
+      </Text>
+      <Text style={[type.micro, { color: c.tertiary, marginTop: space.m, marginBottom: space.xl }]}>
+        YOUTUBE · INSTAGRAM · X
       </Text>
 
-      <View style={[styles.input, { backgroundColor: c.surface }]}>
+      <View style={[styles.input, { backgroundColor: c.surfaceRaised, borderColor: c.hairline }]}>
         <TextInput
           ref={inputRef}
           value={text}
@@ -175,9 +185,9 @@ export function AddScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { paddingHorizontal: space.xl, paddingTop: space.l, paddingBottom: space.xxxl },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space.xs },
-  input: { borderRadius: radius.l, padding: space.l, paddingBottom: space.m },
+  container: { paddingHorizontal: space.xl, paddingTop: space.l, paddingBottom: DOCK_CLEARANCE },
+  tagline: { fontFamily: fonts.display, fontSize: 30, lineHeight: 34, letterSpacing: -0.6 },
+  input: { borderRadius: radius.l, borderWidth: 1, padding: space.l, paddingBottom: space.m },
   textInput: { minHeight: 120, maxHeight: 240, textAlignVertical: 'top', padding: 0 },
   inputBar: { flexDirection: 'row', gap: space.xl, marginTop: space.m },
   link: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
